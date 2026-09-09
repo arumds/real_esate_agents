@@ -1,0 +1,11 @@
+openai>=1.30.0
+mcp>=1.0.0
+shap>=0.45.0        # for wiring in a real model's SHAP explainer
+scikit-learn>=1.4.0 # or your real valuation/rental model's framework
+google-adk>=2.8.0   # for adk_version/ -- multi-agent orchestration
+# google-adk[extensions] instead, if using OpenAI via LiteLLM (see adk_version/agents.py)
+langchain-core>=0.3.0          # for langchain_rag/ -- real RAG pipeline used by adk_version
+langchain-text-splitters>=0.3.0
+langchain-community>=0.3.0     # FAISS vectorstore wrapper
+faiss-cpu>=1.8.0                # the actual vector index used by langchain_rag/retriever.py
+pytest>=8.0.0       # for eval/test_deterministic.py
