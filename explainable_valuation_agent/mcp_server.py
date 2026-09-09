@@ -6,7 +6,7 @@ Exposes the explainable valuation agent as an MCP server so any MCP host
 request a grounded narrative explanation for a property's valuation.
 
 `explain_valuation` runs the same multi-agent composition
-adk_version/agent.py::build_pipeline() uses for this step: the ADK
+real_estate_agents/agent.py::build_pipeline() uses for this step: the ADK
 valuation_explainer_agent inside a LoopAgent alongside GroundingCheckerAgent,
 so a narrative that fails the grounding check gets retried (up to
 MAX_GROUNDING_ATTEMPTS) here too -- not just the bare LlmAgent on its own.
@@ -15,7 +15,7 @@ CONTRACT CHANGE from the old hand-rolled version: that one took a
 caller-supplied predicted_price/base_value/contributions (assuming you'd
 already run a valuation model elsewhere) and only narrated them. ADK's
 agent is built to call run_valuation_model itself as part of its own tool
-loop (see adk_version/agent.py's valuation-explainer instruction), so this
+loop (see real_estate_agents/agent.py's valuation-explainer instruction), so this
 tool now takes a property `record` and runs both the (mocked) model call
 and the narrative step together -- this reflects how the ADK agent actually
 works, not a like-for-like drop-in. A caller who already has externally
@@ -32,16 +32,16 @@ from __future__ import annotations
 
 from google.adk.agents import LoopAgent
 
-from adk_version.agent import build_valuation_explainer_agent
-from adk_version.grounding_checker import MAX_GROUNDING_ATTEMPTS, GroundingCheckerAgent
-from adk_version.runner_utils import parse_output, run_agent
+from real_estate_agents.agent import build_valuation_explainer_agent
+from real_estate_agents.grounding_checker import MAX_GROUNDING_ATTEMPTS, GroundingCheckerAgent
+from real_estate_agents.runner_utils import parse_output, run_agent
 from explainable_valuation_agent.rag import retrieve_market_context
 from shared.mcp_base import build_mcp_server
 
 
 def _build_valuation_loop() -> LoopAgent:
     """Same (explainer, grounding_checker) pairing as
-    adk_version/agent.py::build_pipeline() -- built fresh per call so
+    real_estate_agents/agent.py::build_pipeline() -- built fresh per call so
     concurrent MCP requests don't share agent/session state."""
     return LoopAgent(
         name="valuation_explanation_loop",
