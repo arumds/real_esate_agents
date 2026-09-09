@@ -20,9 +20,13 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from dotenv import load_dotenv
+
 from real_estate_agents.agent import build_data_quality_agent
 from real_estate_agents.runner_utils import parse_output, run_agent
 from eval.golden_dataset import GOLDEN_DATASET
+
+load_dotenv()
 
 
 @dataclass
