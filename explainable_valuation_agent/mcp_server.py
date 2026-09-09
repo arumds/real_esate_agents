@@ -30,6 +30,7 @@ Run:
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
 from google.adk.agents import LoopAgent
 
 from real_estate_agents.agent import build_valuation_explainer_agent
@@ -37,6 +38,8 @@ from real_estate_agents.grounding_checker import MAX_GROUNDING_ATTEMPTS, Groundi
 from real_estate_agents.runner_utils import parse_output, run_agent
 from explainable_valuation_agent.rag import retrieve_market_context
 from shared.mcp_base import build_mcp_server
+
+load_dotenv()
 
 
 def _build_valuation_loop() -> LoopAgent:
