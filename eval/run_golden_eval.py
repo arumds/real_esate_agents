@@ -1,16 +1,16 @@
 """
 eval/run_golden_eval.py
 
-Runs the Data Quality Agent (adk_version.agent.build_data_quality_agent)
+Runs the Data Quality Agent (real_estate_agents.agent.build_data_quality_agent)
 over the golden dataset and prints an accuracy scorecard: overall
 disposition match rate, precision on auto_correct, and recall on records
 that should have been flagged.
 
 Needs a real model available -- either OPENAI_API_KEY (via ADK's LiteLLM
-bridge, the default) or ADK_MODEL=<gemini model> + GOOGLE_API_KEY. Unlike
-the old hand-rolled version, there's no offline mock mode here: ADK's
-LlmAgent always calls a real model, so this always reflects real agent
-accuracy (and costs real API calls -- one fresh agent run per golden case).
+bridge, the default) or ADK_MODEL=<gemini model> + GOOGLE_API_KEY. There's
+no offline mock mode: ADK's LlmAgent always calls a real model, so this
+always reflects real agent accuracy (and costs real API calls -- one fresh
+agent run per golden case).
 
 Run:
     python -m eval.run_golden_eval
@@ -20,8 +20,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from adk_version.agent import build_data_quality_agent
-from adk_version.runner_utils import parse_output, run_agent
+from real_estate_agents.agent import build_data_quality_agent
+from real_estate_agents.runner_utils import parse_output, run_agent
 from eval.golden_dataset import GOLDEN_DATASET
 
 
