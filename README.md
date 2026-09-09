@@ -1,4 +1,4 @@
-# Real Estate Agentic AI Projects
+# Multi-agent Agentic AI Projects
 
 Two runnable agentic AI projects that sit around your existing valuation /
 rental prediction ML models — they don't replace the models, they clean the
