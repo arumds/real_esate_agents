@@ -99,7 +99,7 @@ def test_grounding_check_rejects_hallucinated_figure():
 # (data_quality_agent/agent.py::_safe_parse_json, fail-closed on malformed
 # LLM output). That code -- and the failure mode it guarded against -- no
 # longer exists: data_quality_agent/mcp_server.py now runs the ADK
-# LlmAgent (adk_version/agent.py), whose output_schema enforces valid,
+# LlmAgent (real_estate_agents/agent.py), whose output_schema enforces valid,
 # schema-conformant JSON at the model API level, so there's no free-text
 # LLM output left to parse defensively.
 
