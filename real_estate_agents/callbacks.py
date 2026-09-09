@@ -32,7 +32,19 @@ actual data quality / valuation results.
 """
 
 _tool_call_starts: dict[str, float] = {}
-_model_call_starts: dict[int, float] = {}
+_model_call_starts: dict[str, list[float]] = {}
+"""
+Per-agent-name stack of pending call start times, not a single id-keyed
+slot: ADK hands before_model_callback and after_model_callback separate
+`callback_context` objects for the same call (confirmed empirically --
+id(callback_context) essentially never matched between the two, so the
+previous id()-based key produced latency_ms=None for almost every call).
+An agent's own model calls are strictly sequential (one LlmAgent never
+issues two LLM calls concurrently), so append-on-before/pop-on-after per
+agent_name pairs them correctly even across multiple calls in one agent's
+reasoning loop. Different concurrently-running agents (e.g. ParallelAgent
+branches) never collide here since each has a distinct `name`.
+"""
 
 
 def reset_call_log() -> None:
@@ -85,19 +97,21 @@ def before_model_log(callback_context, llm_request) -> None:
     # exactly `callback_context`/`llm_request`/`llm_response` -- the
     # parameter names below aren't cosmetic, they have to match those
     # keywords or the call raises TypeError: unexpected keyword argument.
-    _model_call_starts[id(callback_context)] = time.monotonic()
+    agent_name = getattr(callback_context, "agent_name", "?")
+    _model_call_starts.setdefault(agent_name, []).append(time.monotonic())
     return None
 
 
 def after_model_log(callback_context, llm_response) -> None:
-    start = _model_call_starts.pop(id(callback_context), None)
+    agent_name = getattr(callback_context, "agent_name", "?")
+    starts = _model_call_starts.get(agent_name)
+    start = starts.pop() if starts else None
     latency_ms = round((time.monotonic() - start) * 1000, 1) if start is not None else None
 
     usage = getattr(llm_response, "usage_metadata", None)
     prompt_tokens = getattr(usage, "prompt_token_count", None) if usage else None
     output_tokens = getattr(usage, "candidates_token_count", None) if usage else None
 
-    agent_name = getattr(callback_context, "agent_name", "?")
     CALL_LOG.append(
         {
             "kind": "model",
