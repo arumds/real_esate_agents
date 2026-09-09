@@ -108,3 +108,23 @@ if __name__ == "__main__":
     import subprocess
 
     subprocess.run(["pytest", __file__, "-v"])
+
+# # 1. Clean record — should pass (sqft matches the mocked assessor record exactly):
+#   Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 1840, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
+#
+#   2. Large discrepancy — should flag_for_review (reported 2450 sqft vs. assessor's 1840, a 33% gap):
+#   Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 2450, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
+#
+#   3. Missing parcel_id — should flag_for_review (nothing to cross-check against):
+#   Validate this property record: {"parcel_id": null, "address": "1 Nowhere Ln, Nowhere, TX 00000", "sqft": 1500, "bedrooms": 2, "bathrooms": 1, "year_built": 1990, "list_price": 150000}
+#
+#   4. Unrecognized address — should flag_for_review (valid parcel, but address won't validate):
+#   Validate this property record: {"parcel_id": "PARCEL-99120", "address": "999 Fictional Blvd, Atlantis, XX 00001", "sqft": 1120, "bedrooms": 2, "bathrooms": 1, "year_built": 1975, "list_price": 95000}
+#
+#   5. Modest discrepancy — candidate for auto_correct (reported 2000 vs. assessor's 1840, ~8.7% off — outside the 5% tolerance but from a clean, unambiguous authoritative source, so this is the LLM's judgment
+#   call, not guaranteed):
+#   Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 2000, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
+#
+#   6. Natural language instead of JSON (tests DATA_QUALITY_INSTRUCTION's fallback parsing more loosely):
+#   Here's a listing to check: parcel PARCEL-55871, 88 Lakeview Dr, Austin, TX 78701, 2600 sqft, 4 bed 3 bath, built 2004, listed at $645,000.
+#
