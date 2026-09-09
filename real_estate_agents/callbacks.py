@@ -80,20 +80,24 @@ def after_tool_log(tool, args: dict, tool_context, tool_response: dict) -> None:
     return None
 
 
-def before_model_log(context, llm_request) -> None:
-    _model_call_starts[id(context)] = time.monotonic()
+def before_model_log(callback_context, llm_request) -> None:
+    # ADK invokes before/after_model_callback with keyword args named
+    # exactly `callback_context`/`llm_request`/`llm_response` -- the
+    # parameter names below aren't cosmetic, they have to match those
+    # keywords or the call raises TypeError: unexpected keyword argument.
+    _model_call_starts[id(callback_context)] = time.monotonic()
     return None
 
 
-def after_model_log(context, llm_response) -> None:
-    start = _model_call_starts.pop(id(context), None)
+def after_model_log(callback_context, llm_response) -> None:
+    start = _model_call_starts.pop(id(callback_context), None)
     latency_ms = round((time.monotonic() - start) * 1000, 1) if start is not None else None
 
     usage = getattr(llm_response, "usage_metadata", None)
     prompt_tokens = getattr(usage, "prompt_token_count", None) if usage else None
     output_tokens = getattr(usage, "candidates_token_count", None) if usage else None
 
-    agent_name = getattr(context, "agent_name", "?")
+    agent_name = getattr(callback_context, "agent_name", "?")
     CALL_LOG.append(
         {
             "kind": "model",
