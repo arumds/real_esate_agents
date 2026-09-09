@@ -6,11 +6,11 @@ tools (for other agents/hosts to compose freely) AND a single high-level
 `run_data_quality_check` tool (for hosts that just want the final decision).
 
 `run_data_quality_check` runs the real ADK LlmAgent
-(adk_version.agent.build_data_quality_agent) via adk_version/runner_utils.py,
+(real_estate_agents.agent.build_data_quality_agent) via real_estate_agents/runner_utils.py,
 rather than a second hand-rolled agent loop -- one agent implementation,
 reused here instead of duplicated. The four raw validators below are still
 plain functions from tools.py, the same single source of truth ADK's
-FunctionTool wrappers (adk_version/tools.py) wrap underneath.
+FunctionTool wrappers (real_estate_agents/tools.py) wrap underneath.
 
 Run:
     pip install mcp "google-adk[extensions]"
@@ -23,8 +23,8 @@ MCP client) at this server via stdio.
 
 from __future__ import annotations
 
-from adk_version.agent import build_data_quality_agent
-from adk_version.runner_utils import parse_output, run_agent
+from real_estate_agents.agent import build_data_quality_agent
+from real_estate_agents.runner_utils import parse_output, run_agent
 from data_quality_agent.tools import (
     check_field_completeness,
     compare_reported_vs_authoritative,
