@@ -47,6 +47,53 @@ real_estate_agents/
 └── requirements.txt
 ```
 
+## Architecture
+
+The core pipeline: a deterministic gate in plain Python, wrapped around two
+LLM agents and a non-LLM self-critique loop.
+
+```mermaid
+flowchart TD
+    entry(["main.py / adk run / adk web / MCP servers / eval harness"]) --> dq
+    dq["data_quality_agent (LlmAgent)\ntools: check_field_completeness, geocode_and_validate_address,\nlookup_county_assessor_record, compare_reported_vs_authoritative"]
+    dq -->|"output_schema: DataQualityDecision"| gate{"disposition ==\nflag_for_review?"}
+    gate -- "yes: HALT, valuation never runs" --> halted(["Flagged for human review"])
+    gate -- "no: pass / auto_correct" --> va
+    va["valuation_explainer_agent (LlmAgent)\ntools: run_valuation_model, retrieve_market_context (RAG)"]
+    va -->|"output_schema: ValuationExplanation"| gc{"grounding_checker:\nevery dollar figure traces\nto the model output?"}
+    gc -- "no: feedback into state, retry" --> va
+    gc -- "yes: escalate, breaks loop" --> narrative(["Final narrative + predicted price"])
+```
+
+Mapping boxes to code: `entry` → anything driving the pipeline; `dq`/`gate`
+together are `root_agent` (`PipelineOrchestratorAgent`, a custom
+`BaseAgent` — the `gate` diamond is its plain Python `if`, not an LLM
+decision); `va` + `gc` together are `valuation_loop`, a `LoopAgent` capped
+at `MAX_GROUNDING_ATTEMPTS` retries. `before/after_tool_callback` and
+`before/after_model_callback` (`callbacks.py`) wrap every tool/model call
+in both `LlmAgent`s for latency logging, and a `before_tool_callback`
+guardrail sits directly in front of `run_valuation_model` rejecting a call
+whose record is missing a valid `sqft` — omitted above to keep the
+control-flow diagram readable; see **Callbacks** below.
+
+`build_multi_audience_pipeline()` swaps the single `LoopAgent` above for a
+`ParallelAgent` of three, one per audience, running concurrently once the
+gate passes:
+
+```mermaid
+flowchart LR
+    gate2{"gate passed:\npass / auto_correct"} --> loop_h
+    gate2 --> loop_u
+    gate2 --> loop_a
+    loop_h["LoopAgent (homeowner)"] --> out_h[("valuation_explanation_raw\n__homeowner")]
+    loop_u["LoopAgent (underwriter)"] --> out_u[("valuation_explanation_raw\n__underwriter")]
+    loop_a["LoopAgent (appraiser)"] --> out_a[("valuation_explanation_raw\n__appraiser")]
+```
+
+Each `LoopAgent` here is the same `(valuation_explainer_agent, grounding_checker)`
+pair from the diagram above, just parametrized per audience — same retry
+logic, independent branches, no merge step.
+
 ## The agent implementation: Google ADK
 
 `real_estate_agents/agent.py` holds everything agent-related: both `LlmAgent`s, the
@@ -108,6 +155,18 @@ Unlike `main.py` (which pre-seeds session state with `input_record`/
 only pass along whatever you type as a chat message — `DATA_QUALITY_INSTRUCTION`
 in `agent.py` handles that by falling back to reading the record straight
 out of the message when session state doesn't have it yet.
+
+Sample prompts to paste in (more in `eval/test_deterministic.py`'s trailing
+comment, covering `pass`/`flag_for_review`/`auto_correct` cases against the
+mocked assessor records in `data_quality_agent/tools.py`):
+```
+Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 1840, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
+```
+```
+Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 2450, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
+```
+The first matches the mocked assessor record exactly (`pass`); the second
+is a 33% sqft discrepancy against the same parcel (`flag_for_review`).
 
 ## How the two domain packages fit in
 
