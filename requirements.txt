@@ -9,3 +9,4 @@ langchain-text-splitters>=0.3.0
 langchain-community>=0.3.0     # FAISS vectorstore wrapper
 faiss-cpu>=1.8.0                # the actual vector index used by langchain_rag/retriever.py
 pytest>=8.0.0       # for eval/test_deterministic.py
+python-dotenv>=1.0.0 # loads .env for OPENAI_API_KEY/ADK_MODEL/GOOGLE_API_KEY -- main.py, both mcp_server.py, eval/run_golden_eval.py
