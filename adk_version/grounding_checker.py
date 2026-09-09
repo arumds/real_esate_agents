@@ -9,7 +9,7 @@ where the checker is a plain (non-LLM) custom BaseAgent that:
   - if it passes, yields an Event with actions.escalate=True, which breaks
     the LoopAgent
   - if it fails, writes feedback into session state (read by the
-    generator's next instruction, see agents.py::_valuation_instruction)
+    generator's next instruction, see agent.py::_make_valuation_instruction)
     and does NOT escalate, so the loop runs the generator again
 
 This is genuinely more manual than CrewAI's one-line `guardrail=` field --
@@ -66,7 +66,7 @@ class GroundingCheckerAgent(BaseAgent):
     concurrently under a ParallelAgent -- one per audience -- each checker
     must be pointed at its own branch's keys instead, so retries in one
     branch don't read/write another's state (see
-    orchestrator.py::build_multi_audience_pipeline).
+    agent.py::build_multi_audience_pipeline).
     """
 
     valuation_output_key: str = "valuation_explanation_raw"
@@ -107,7 +107,7 @@ class GroundingCheckerAgent(BaseAgent):
             return
 
         # Not grounded: stash feedback in state for the explainer's next
-        # attempt (see agents.py::_make_valuation_instruction reading this
+        # attempt (see agent.py::_make_valuation_instruction reading this
         # same feedback_key), and do NOT escalate so the LoopAgent runs the
         # explainer again.
         yield Event(

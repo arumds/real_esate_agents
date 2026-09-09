@@ -25,13 +25,12 @@ real_estate_agents/
 │   ├── embeddings.py        # Custom Embeddings adapter reusing shared/llm_client.py::embed()
 │   ├── retriever.py         # RecursiveCharacterTextSplitter + FAISS vectorstore
 │   └── tool.py               # The single @tool consumed by adk_version
-├── adk_version/            # Multi-agent version using Google ADK
+├── adk_version/            # Multi-agent system using Google ADK
 │   ├── schemas.py          # Pydantic output schemas for each agent (independent copy)
 │   ├── tools.py            # Wraps the same tool functions as FunctionTool for ADK
-│   ├── agents.py           # 2 LlmAgents with output_schema + dynamic instructions
+│   ├── agent.py            # Both LlmAgents + PipelineOrchestratorAgent + root_agent (ADK's auto-discovery entry point)
 │   ├── callbacks.py        # before/after_tool + before/after_model logging, plus an input-validation guardrail
 │   ├── grounding_checker.py# Custom BaseAgent implementing the output-side guardrail manually
-│   ├── orchestrator.py     # Custom BaseAgent: deterministic Python routing (not LLM-judged)
 │   └── main.py             # Entry point using Runner + InMemorySessionService
 ├── eval/                   # Evaluation harness (see eval/README.md)
 │   ├── test_deterministic.py
@@ -51,18 +50,22 @@ about who does what.
 `adk_version/` is the real multi-agent refactor, built on Google's Agent
 Development Kit. Same two underlying tasks, same shared `tools.py`/`rag.py`/
 `shap_utils.py` logic underneath, but orchestrated through ADK's own
-primitives instead of a hand-rolled Python script:
+primitives instead of a hand-rolled Python script. Everything agent-related
+— both `LlmAgent`s, the orchestrator that wires them together, and
+`root_agent` — lives in one `agent.py`, following ADK's own convention:
+`adk web`/`adk run`/`adk deploy` auto-discover a module-level `root_agent`
+by importing this file.
 
-- **Delegation**: `orchestrator.py` is a custom `BaseAgent` that makes the
-  "never value a flagged record" call with a plain Python `if` statement
-  rather than trusting an LLM's judgment on a rule that must never be
-  violated — deterministic routing for a rule with zero tolerance for
-  error.
+- **Delegation**: `PipelineOrchestratorAgent` (in `agent.py`) is a custom
+  `BaseAgent` that makes the "never value a flagged record" call with a
+  plain Python `if` statement rather than trusting an LLM's judgment on a
+  rule that must never be violated — deterministic routing for a rule with
+  zero tolerance for error.
 - **Guardrail/retry**: `grounding_checker.py` reimplements the same
   grounding check from the hand-rolled version as a custom non-LLM
   `BaseAgent`, sitting inside a `LoopAgent` alongside the explainer agent,
   escalating (breaking the loop) only once the check passes.
-- **Fan-out**: `orchestrator.py::build_multi_audience_pipeline` uses a
+- **Fan-out**: `agent.py::build_multi_audience_pipeline` uses a
   `ParallelAgent` to generate the homeowner/underwriter/appraiser
   narratives concurrently — one `(explainer, grounding_checker)` `LoopAgent`
   per audience, each writing to its own `valuation_explanation_raw__<audience>`
@@ -94,6 +97,18 @@ pip install "google-adk[extensions]"
 export OPENAI_API_KEY=sk-...
 python -m adk_version.main   # runs both the single-audience and multi-audience (ParallelAgent) demos
 ```
+
+Or explore it interactively via ADK's own dev UI, which discovers `root_agent`
+in `adk_version/agent.py` automatically:
+```bash
+adk web   # run from the repo root; open the printed localhost URL, pick "adk_version"
+```
+Note: `adk web` seeds session state from your chat message, not from a
+Python dict — `main.py`'s pre-seeded `input_record`/`audience`/
+`property_summary` state doesn't happen for you there, so you'd need to
+paste the record into the chat and adjust the agent instructions (or add a
+`before_agent_callback`) to parse it, rather than reading it pre-seeded from
+session state.
 
 ## A real RAG pipeline: LangChain
 

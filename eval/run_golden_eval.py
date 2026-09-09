@@ -1,13 +1,16 @@
 """
 eval/run_golden_eval.py
 
-Runs the Data Quality Agent (hand-rolled version) over the golden dataset
-and prints an accuracy scorecard: overall disposition match rate, precision
-on auto_correct, and recall on records that should have been flagged.
+Runs the Data Quality Agent (adk_version.agent.build_data_quality_agent)
+over the golden dataset and prints an accuracy scorecard: overall
+disposition match rate, precision on auto_correct, and recall on records
+that should have been flagged.
 
-Works in mock mode (no OPENAI_API_KEY) but the scores will be near-meaningless
-then, since the mock LLM can't actually reason -- it's meant to demonstrate
-the eval mechanics end-to-end. Set OPENAI_API_KEY for a real accuracy read.
+Needs a real model available -- either OPENAI_API_KEY (via ADK's LiteLLM
+bridge, the default) or ADK_MODEL=<gemini model> + GOOGLE_API_KEY. Unlike
+the old hand-rolled version, there's no offline mock mode here: ADK's
+LlmAgent always calls a real model, so this always reflects real agent
+accuracy (and costs real API calls -- one fresh agent run per golden case).
 
 Run:
     python -m eval.run_golden_eval
@@ -17,9 +20,9 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from data_quality_agent.agent import run_data_quality_check
+from adk_version.agent import build_data_quality_agent
+from adk_version.runner_utils import parse_output, run_agent
 from eval.golden_dataset import GOLDEN_DATASET
-from shared.llm_client import MOCK_MODE
 
 
 @dataclass
@@ -32,24 +35,23 @@ class CaseResult:
 
 
 def run_eval() -> None:
-    if MOCK_MODE:
-        print(
-            "WARNING: OPENAI_API_KEY not set -- running in mock mode. Scores "
-            "below reflect the mock LLM's canned behavior, not real agent "
-            "accuracy. Set OPENAI_API_KEY for a meaningful read.\n"
-        )
-
     results: list[CaseResult] = []
     for case in GOLDEN_DATASET:
-        outcome = run_data_quality_check(case["record"])
-        actual = outcome.disposition.value
+        agent = build_data_quality_agent()
+        final_state = run_agent(
+            agent,
+            state={"input_record": case["record"]},
+            trigger_text=f"Validate and explain this property record: {case['record']}",
+        )
+        decision = parse_output(final_state, "data_quality_decision_raw") or {}
+        actual = decision.get("disposition", "flag_for_review")
         results.append(
             CaseResult(
                 case_id=case["id"],
                 expected=case["expected_disposition"],
                 actual=actual,
                 correct=(actual == case["expected_disposition"]),
-                reasoning=outcome.reasoning,
+                reasoning=decision.get("reasoning", "Agent produced no decision."),
             )
         )
 

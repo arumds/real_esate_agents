@@ -95,12 +95,13 @@ def test_grounding_check_rejects_hallucinated_figure():
     assert 55000 in result["unsupported_dollar_figures"]
 
 
-def test_malformed_llm_json_falls_back_safely():
-    from data_quality_agent.agent import _safe_parse_json
-
-    garbage = "I think the disposition should be pass but let me explain why in prose..."
-    parsed = _safe_parse_json(garbage)
-    assert parsed["disposition"] == "flag_for_review"  # fail-closed default
+# Note: there used to be a test here for a hand-rolled JSON-parsing fallback
+# (data_quality_agent/agent.py::_safe_parse_json, fail-closed on malformed
+# LLM output). That code -- and the failure mode it guarded against -- no
+# longer exists: data_quality_agent/mcp_server.py now runs the ADK
+# LlmAgent (adk_version/agent.py), whose output_schema enforces valid,
+# schema-conformant JSON at the model API level, so there's no free-text
+# LLM output left to parse defensively.
 
 
 if __name__ == "__main__":

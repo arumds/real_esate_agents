@@ -3,7 +3,7 @@ adk_version/main.py
 
 Run the ADK-based pipeline end to end. Requires OPENAI_API_KEY plus
 `pip install "google-adk[extensions]"` for the LiteLLM/OpenAI bridge (see
-adk_version/agents.py::_default_model), or set ADK_MODEL + GOOGLE_API_KEY to
+adk_version/agent.py::_default_model), or set ADK_MODEL + GOOGLE_API_KEY to
 use a native Gemini model instead.
 
 Run:
@@ -22,8 +22,8 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from adk_version.agent import DEFAULT_AUDIENCES, build_multi_audience_pipeline, build_pipeline
 from adk_version.callbacks import reset_call_log, summarize_call_log
-from adk_version.orchestrator import DEFAULT_AUDIENCES, build_multi_audience_pipeline, build_pipeline
 
 APP_NAME = "real_estate_pipeline"
 
@@ -36,8 +36,8 @@ async def run(record: dict, property_summary: str, audience: str = "homeowner") 
     session_id = str(uuid.uuid4())
 
     # Seed session state with the inputs the agents read via ctx.session.state
-    # (see agents.py's instruction referencing 'input_record'/'audience'/
-    # 'property_summary', and orchestrator.py reading 'data_quality_decision_raw').
+    # (see agent.py's instruction referencing 'input_record'/'audience'/
+    # 'property_summary', and PipelineOrchestratorAgent reading 'data_quality_decision_raw').
     await session_service.create_session(
         app_name=APP_NAME,
         user_id=user_id,
@@ -92,7 +92,7 @@ async def run_multi_audience(record: dict, property_summary: str, audiences=DEFA
     Same pipeline, but the valuation-explanation step is a ParallelAgent
     that generates one narrative per audience concurrently instead of a
     single audience read from session state -- see
-    orchestrator.py::build_multi_audience_pipeline.
+    agent.py::build_multi_audience_pipeline.
     """
     reset_call_log()
     session_service = InMemorySessionService()
