@@ -17,6 +17,10 @@ so it can read `grounding_feedback` out of session state on retry -- see
 grounding_checker.py for where that gets set. This is the ADK-idiomatic
 version of the "generate -> critique -> feed feedback back -> regenerate"
 loop.
+
+Both agents also carry logging callbacks (see callbacks.py) for tool/model
+latency; the valuation explainer additionally carries a before_tool_callback
+guardrail that validates its input before run_valuation_model executes.
 """
 
 from __future__ import annotations
@@ -26,6 +30,13 @@ import os
 from google.adk.agents import Agent
 from google.adk.agents.readonly_context import ReadonlyContext
 
+from adk_version.callbacks import (
+    after_model_log,
+    after_tool_log,
+    before_model_log,
+    before_tool_log,
+    validate_valuation_input,
+)
 from adk_version.schemas import DataQualityDecision, ValuationExplanation
 from adk_version.tools import DATA_QUALITY_TOOLS, VALUATION_EXPLAINER_TOOLS
 
@@ -87,6 +98,10 @@ def build_data_quality_agent() -> Agent:
         tools=DATA_QUALITY_TOOLS,
         output_schema=DataQualityDecision,
         output_key="data_quality_decision_raw",
+        before_tool_callback=before_tool_log,
+        after_tool_callback=after_tool_log,
+        before_model_callback=before_model_log,
+        after_model_callback=after_model_log,
     )
 
 
@@ -163,4 +178,11 @@ def build_valuation_explainer_agent(audience: str | None = None) -> Agent:
         tools=VALUATION_EXPLAINER_TOOLS,
         output_schema=ValuationExplanation,
         output_key=f"valuation_explanation_raw{suffix}",
+        # before_tool_log always runs first (always returns None, so it never
+        # short-circuits the chain) and stamps a start time; validate_valuation_input
+        # runs second and may short-circuit run_valuation_model if its input is bad.
+        before_tool_callback=[before_tool_log, validate_valuation_input],
+        after_tool_callback=after_tool_log,
+        before_model_callback=before_model_log,
+        after_model_callback=after_model_log,
     )

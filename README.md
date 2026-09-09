@@ -29,7 +29,8 @@ real_estate_agents/
 │   ├── schemas.py          # Pydantic output schemas for each agent (independent copy)
 │   ├── tools.py            # Wraps the same tool functions as FunctionTool for ADK
 │   ├── agents.py           # 2 LlmAgents with output_schema + dynamic instructions
-│   ├── grounding_checker.py# Custom BaseAgent implementing the guardrail manually
+│   ├── callbacks.py        # before/after_tool + before/after_model logging, plus an input-validation guardrail
+│   ├── grounding_checker.py# Custom BaseAgent implementing the output-side guardrail manually
 │   ├── orchestrator.py     # Custom BaseAgent: deterministic Python routing (not LLM-judged)
 │   └── main.py             # Entry point using Runner + InMemorySessionService
 ├── eval/                   # Evaluation harness (see eval/README.md)
@@ -69,6 +70,20 @@ primitives instead of a hand-rolled Python script:
   `PipelineOrchestratorAgent` doesn't care whether it's handed this
   `ParallelAgent` or the single-audience `LoopAgent` — same deterministic
   gate either way.
+- **Callbacks**: `callbacks.py` attaches `before/after_tool_callback` and
+  `before/after_model_callback` hooks to both `LlmAgent`s, logging every
+  tool/model call's latency (and token counts, when the model returns
+  `usage_metadata`) into an in-memory `CALL_LOG` that `main.py` prints as a
+  summary at the end of each run. These always return `None`, so they never
+  change pipeline behavior — pure observability. The valuation explainer
+  also carries `validate_valuation_input`, a `before_tool_callback`
+  guardrail on `run_valuation_model`: it rejects a call whose `record` is
+  missing a valid `sqft` *before* the tool runs (which would otherwise
+  crash on `record["sqft"] - 1800`), returning an error dict that ADK uses
+  as the tool's response instead. This is a different guardrail mechanism
+  than `grounding_checker.py`'s: the checker validates the explainer's
+  *output* after generation inside a `LoopAgent`; this guardrail validates
+  a tool's *input* before it's called, at the callback layer.
 - **Model provider**: ADK defaults to Gemini. Using OpenAI (to stay
   consistent with the rest of this repo) requires ADK's LiteLLM bridge:
   `pip install "google-adk[extensions]"`.

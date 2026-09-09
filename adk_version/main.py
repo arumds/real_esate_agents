@@ -22,6 +22,7 @@ from google.adk.runners import Runner
 from google.adk.sessions import InMemorySessionService
 from google.genai import types
 
+from adk_version.callbacks import reset_call_log, summarize_call_log
 from adk_version.orchestrator import DEFAULT_AUDIENCES, build_multi_audience_pipeline, build_pipeline
 
 APP_NAME = "real_estate_pipeline"
@@ -29,6 +30,7 @@ APP_NAME = "real_estate_pipeline"
 from dotenv import load_dotenv
 load_dotenv()
 async def run(record: dict, property_summary: str, audience: str = "homeowner") -> None:
+    reset_call_log()
     session_service = InMemorySessionService()
     user_id = "demo-user"
     session_id = str(uuid.uuid4())
@@ -79,6 +81,11 @@ async def run(record: dict, property_summary: str, audience: str = "homeowner") 
     print("data_quality_decision_raw:", session.state.get("data_quality_decision_raw"))
     print("valuation_explanation_raw:", session.state.get("valuation_explanation_raw"))
 
+    print("\n" + "=" * 70)
+    print("CALLBACK LOG (tool/model latency)")
+    print("=" * 70)
+    print(summarize_call_log())
+
 
 async def run_multi_audience(record: dict, property_summary: str, audiences=DEFAULT_AUDIENCES) -> None:
     """
@@ -87,6 +94,7 @@ async def run_multi_audience(record: dict, property_summary: str, audiences=DEFA
     single audience read from session state -- see
     orchestrator.py::build_multi_audience_pipeline.
     """
+    reset_call_log()
     session_service = InMemorySessionService()
     user_id = "demo-user"
     session_id = str(uuid.uuid4())
@@ -130,6 +138,11 @@ async def run_multi_audience(record: dict, property_summary: str, audiences=DEFA
     print("data_quality_decision_raw:", session.state.get("data_quality_decision_raw"))
     for audience in audiences:
         print(f"valuation_explanation_raw__{audience}:", session.state.get(f"valuation_explanation_raw__{audience}"))
+
+    print("\n" + "=" * 70)
+    print("CALLBACK LOG (tool/model latency, all branches)")
+    print("=" * 70)
+    print(summarize_call_log())
 
 
 if __name__ == "__main__":
