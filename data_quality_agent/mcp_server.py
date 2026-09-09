@@ -23,6 +23,8 @@ MCP client) at this server via stdio.
 
 from __future__ import annotations
 
+from dotenv import load_dotenv
+
 from real_estate_agents.agent import build_data_quality_agent
 from real_estate_agents.runner_utils import parse_output, run_agent
 from data_quality_agent.tools import (
@@ -32,6 +34,8 @@ from data_quality_agent.tools import (
     lookup_county_assessor_record,
 )
 from shared.mcp_base import build_mcp_server
+
+load_dotenv()
 
 
 def run_data_quality_check_tool(record: dict) -> dict:
