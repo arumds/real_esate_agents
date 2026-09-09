@@ -1,70 +1,67 @@
 # Multi-agent Agentic AI Projects
 
-Two runnable agentic AI projects that sit around your existing valuation /
-rental prediction ML models — they don't replace the models, they clean the
-data going in and explain the output coming out. Alongside them, two
-multi-agent orchestration refactors (Google ADK, and a custom Python
-pipeline) and a real LangChain RAG pipeline shared between them.
+Two agents that sit around your existing valuation / rental prediction ML
+models — they don't replace the models, they clean the data going in and
+explain the output coming out. One agent implementation, built on Google's
+Agent Development Kit (`adk_version/`), consumed three different ways:
+directly (`adk_version/main.py` or `adk web`), over MCP
+(`data_quality_agent/mcp_server.py`, `explainable_valuation_agent/mcp_server.py`),
+and by the eval harness (`eval/run_golden_eval.py`). A real LangChain RAG
+pipeline (`langchain_rag/`) backs the valuation explainer. `data_quality_agent/`
+and `explainable_valuation_agent/` hold deterministic tools/utilities and an
+MCP transport layer; all agent reasoning lives in `adk_version/agent.py`.
 
 ```
 real_estate_agents/
 ├── shared/
-│   ├── llm_client.py      # OpenAI API wrapper + generic agent loop (ReAct-style)
+│   ├── llm_client.py      # OpenAI wrapper: chat/embed. embed() feeds rag.py and langchain_rag/embeddings.py
 │   └── mcp_base.py        # Helper to expose any tool set as an MCP server
 ├── data_quality_agent/
-│   ├── tools.py           # Validators + mocked secondary-source lookups
-│   ├── agent.py           # Orchestration: rules first, LLM for judgment calls
-│   └── mcp_server.py      # Exposes the agent + tools over MCP
+│   ├── tools.py           # Validators + mocked secondary-source lookups (single source
+│   │                       # of truth -- also wrapped as FunctionTools in adk_version/tools.py)
+│   └── mcp_server.py      # MCP transport: runs adk_version's data_quality_agent via runner_utils.py
 ├── explainable_valuation_agent/
-│   ├── rag.py             # In-memory vector store over comps/market reports
-│   ├── shap_utils.py      # SHAP formatting + narrative grounding checker
-│   ├── agent.py           # Retrieve -> draft -> self-critique -> redraft loop
-│   └── mcp_server.py      # Exposes the agent + tools over MCP
-├── orchestrate_pipeline.py # Chains both agents around a (mocked) ML model call
+│   ├── rag.py             # Simple in-memory vector store -- a baseline to compare
+│   │                       # against langchain_rag/'s real pipeline
+│   ├── shap_utils.py      # SHAP formatting + a grounding-check reference implementation
+│   └── mcp_server.py      # MCP transport: runs adk_version's valuation loop via runner_utils.py
 ├── langchain_rag/          # Real LangChain RAG pipeline, consumed by adk_version
 │   ├── embeddings.py        # Custom Embeddings adapter reusing shared/llm_client.py::embed()
 │   ├── retriever.py         # RecursiveCharacterTextSplitter + FAISS vectorstore
 │   └── tool.py               # The single @tool consumed by adk_version
-├── adk_version/            # Multi-agent system using Google ADK
-│   ├── schemas.py          # Pydantic output schemas for each agent (independent copy)
-│   ├── tools.py            # Wraps the same tool functions as FunctionTool for ADK
+├── adk_version/            # The agent implementation -- everything else calls into this
+│   ├── schemas.py          # Pydantic output schemas (DataQualityDecision, ValuationExplanation)
+│   ├── tools.py            # Wraps data_quality_agent/tools.py + langchain_rag as ADK tools
 │   ├── agent.py            # Both LlmAgents + PipelineOrchestratorAgent + root_agent (ADK's auto-discovery entry point)
 │   ├── callbacks.py        # before/after_tool + before/after_model logging, plus an input-validation guardrail
-│   ├── grounding_checker.py# Custom BaseAgent implementing the output-side guardrail manually
-│   └── main.py             # Entry point using Runner + InMemorySessionService
+│   ├── grounding_checker.py# Custom BaseAgent implementing the output-side guardrail
+│   ├── runner_utils.py     # run_agent(agent, state, trigger_text) -- lets sync callers
+│   │                       # (the MCP servers, eval/run_golden_eval.py) call an ADK agent
+│   │                       # like a plain function instead of each wiring Runner/SessionService
+│   └── main.py             # Demo entry point using Runner + InMemorySessionService
 ├── eval/                   # Evaluation harness (see eval/README.md)
-│   ├── test_deterministic.py
+│   ├── test_deterministic.py  # Pure-Python logic only -- no LLM, no ADK
 │   ├── golden_dataset.py
-│   └── run_golden_eval.py
+│   └── run_golden_eval.py     # Runs adk_version's data_quality_agent over the golden dataset
 ├── genai_engineer_prep_plan.md # Personal study/prep notes, not part of the pipeline
 └── requirements.txt
 ```
 
-## Is this multi-agent?
+## The agent implementation: Google ADK
 
-The original two agents (`data_quality_agent/`, `explainable_valuation_agent/`)
-are separate agents with distinct roles, but they're chained in a **fixed
-sequence** by `orchestrate_pipeline.py` — no delegation, no runtime decision
-about who does what.
-
-`adk_version/` is the real multi-agent refactor, built on Google's Agent
-Development Kit. Same two underlying tasks, same shared `tools.py`/`rag.py`/
-`shap_utils.py` logic underneath, but orchestrated through ADK's own
-primitives instead of a hand-rolled Python script. Everything agent-related
-— both `LlmAgent`s, the orchestrator that wires them together, and
-`root_agent` — lives in one `agent.py`, following ADK's own convention:
-`adk web`/`adk run`/`adk deploy` auto-discover a module-level `root_agent`
+`adk_version/agent.py` holds everything agent-related: both `LlmAgent`s, the
+orchestrator that wires them together, and `root_agent` — the module-level
+variable ADK's own tooling (`adk web`/`adk run`/`adk deploy`) auto-discovers
 by importing this file.
 
-- **Delegation**: `PipelineOrchestratorAgent` (in `agent.py`) is a custom
-  `BaseAgent` that makes the "never value a flagged record" call with a
-  plain Python `if` statement rather than trusting an LLM's judgment on a
-  rule that must never be violated — deterministic routing for a rule with
-  zero tolerance for error.
-- **Guardrail/retry**: `grounding_checker.py` reimplements the same
-  grounding check from the hand-rolled version as a custom non-LLM
-  `BaseAgent`, sitting inside a `LoopAgent` alongside the explainer agent,
-  escalating (breaking the loop) only once the check passes.
+- **Delegation**: `PipelineOrchestratorAgent` is a custom `BaseAgent` that
+  makes the "never value a flagged record" call with a plain Python `if`
+  statement rather than an LLM's judgment — deterministic routing for a
+  rule with zero tolerance for error.
+- **Guardrail/retry**: `grounding_checker.py` implements a grounding check
+  as a custom non-LLM `BaseAgent` sitting inside a `LoopAgent` alongside the
+  explainer agent, escalating (breaking the loop) only once the check
+  passes.
 - **Fan-out**: `agent.py::build_multi_audience_pipeline` uses a
   `ParallelAgent` to generate the homeowner/underwriter/appraiser
   narratives concurrently — one `(explainer, grounding_checker)` `LoopAgent`
@@ -83,19 +80,20 @@ by importing this file.
   guardrail on `run_valuation_model`: it rejects a call whose `record` is
   missing a valid `sqft` *before* the tool runs (which would otherwise
   crash on `record["sqft"] - 1800`), returning an error dict that ADK uses
-  as the tool's response instead. This is a different guardrail mechanism
-  than `grounding_checker.py`'s: the checker validates the explainer's
-  *output* after generation inside a `LoopAgent`; this guardrail validates
-  a tool's *input* before it's called, at the callback layer.
+  as the tool's response instead. This is a different mechanism than
+  `grounding_checker.py`'s: the checker validates the explainer's *output*
+  after generation inside a `LoopAgent`; this guardrail validates a tool's
+  *input* before it's called, at the callback layer.
 - **Model provider**: ADK defaults to Gemini. Using OpenAI (to stay
   consistent with the rest of this repo) requires ADK's LiteLLM bridge:
-  `pip install "google-adk[extensions]"`.
+  `pip install "google-adk[extensions]"`. There's no offline/mock mode —
+  every run calls a real model.
 
-Run it:
+Run it end to end:
 ```bash
 pip install "google-adk[extensions]"
-export OPENAI_API_KEY=sk-...
-python -m adk_version.main   # runs both the single-audience and multi-audience (ParallelAgent) demos
+export OPENAI_API_KEY=sk-...   # or: export ADK_MODEL=gemini-2.0-flash GOOGLE_API_KEY=...
+python -m adk_version.main     # runs both the single-audience and multi-audience (ParallelAgent) demos
 ```
 
 Or explore it interactively via ADK's own dev UI, which discovers `root_agent`
@@ -109,6 +107,51 @@ Python dict — `main.py`'s pre-seeded `input_record`/`audience`/
 paste the record into the chat and adjust the agent instructions (or add a
 `before_agent_callback`) to parse it, rather than reading it pre-seeded from
 session state.
+
+## How the two domain packages fit in
+
+`data_quality_agent/` and `explainable_valuation_agent/` hold the
+deterministic tool functions each ADK `FunctionTool` wraps
+(`data_quality_agent/tools.py`), a simple RAG baseline
+(`explainable_valuation_agent/rag.py`), and an `mcp_server.py` per package
+that exposes an ADK agent over MCP:
+
+- `data_quality_agent/mcp_server.py::run_data_quality_check` builds
+  `adk_version.agent.build_data_quality_agent()` and runs it via
+  `adk_version/runner_utils.py::run_agent()`.
+- `explainable_valuation_agent/mcp_server.py::explain_valuation` builds the
+  **same `(valuation_explainer_agent, grounding_checker)` `LoopAgent`**
+  `adk_version/agent.py::build_pipeline()` uses for this step — not the
+  bare `LlmAgent` — so a narrative that fails the grounding check gets
+  retried over MCP too, not just when run through `adk_version/main.py`.
+
+**API shape worth knowing**: `explain_valuation` takes a property `record`
+(not precomputed `predicted_price`/`base_value`/`contributions`), because
+the ADK agent calls `run_valuation_model` itself as part of its own tool
+loop — the tool runs both the (mocked) model call and the narrative step
+together. A caller who already has externally computed SHAP contributions
+and only wants narration would need a different tool shape than this one.
+
+`adk_version/runner_utils.py::run_agent(agent, state, trigger_text)` is
+what makes this possible without each caller re-deriving ADK's
+Runner/SessionService plumbing: it creates a fresh in-memory session,
+seeds it with `state`, drives the agent to completion via `Runner.run_async`,
+and returns the final session state as a plain dict — the boundary between
+ADK's async world and the rest of this repo, which is otherwise sync
+throughout (FastMCP tool functions and `eval/run_golden_eval.py`'s loop are
+both plain sync callables).
+
+Run the MCP servers:
+```bash
+pip install mcp "google-adk[extensions]"
+export OPENAI_API_KEY=sk-...   # or ADK_MODEL + GOOGLE_API_KEY for Gemini
+python -m data_quality_agent.mcp_server            # stdio MCP server
+python -m explainable_valuation_agent.mcp_server    # stdio MCP server
+```
+Point any MCP-compatible host (Claude Desktop's config, another team's
+agent orchestrator, a Claude Agent SDK app) at these servers and they can
+call `run_data_quality_check` or `explain_valuation` without any custom
+client code.
 
 ## A real RAG pipeline: LangChain
 
@@ -125,146 +168,117 @@ from google.adk.tools.langchain_tool import LangchainTool
 retrieve_market_context = LangchainTool(_lc_retrieve_market_context)
 ```
 
-The hand-rolled version (`explainable_valuation_agent/rag.py`) deliberately
-keeps its original simple in-memory cosine-similarity implementation
-untouched, as a baseline for comparison against this real RAG pipeline.
+`explainable_valuation_agent/rag.py` is a simple in-memory cosine-similarity
+implementation, kept as a baseline for comparison against this real RAG
+pipeline. It's exposed as its own standalone `retrieve_market_context` MCP
+tool, independent of the ADK agent's internal (LangChain-backed) retrieval.
 
 ## 1. Data Quality Agent
 
 **Problem:** incoming property records have wrong sqft, mismatched
 addresses, missing fields — garbage in, garbage valuations out.
 
-**How it works:**
-1. Deterministic rule checks run first (`tools.py::check_field_completeness`)
-   — no LLM call needed for structurally sound records with no parcel_id to
-   cross-check.
-2. If there's a parcel_id (something to verify against) or a rule violation,
-   an LLM agent loop takes over: it decides *which* secondary-source tools to
-   call (`geocode_and_validate_address`, `lookup_county_assessor_record`,
-   `compare_reported_vs_authoritative`), inspects the results, and returns a
-   disposition:
+**How it works** (`adk_version/agent.py::build_data_quality_agent`):
+1. The agent's instruction always cross-checks a suspicious/present
+   `parcel_id` against the county assessor record via its tools
+   (`geocode_and_validate_address`, `lookup_county_assessor_record`,
+   `compare_reported_vs_authoritative` — all from `data_quality_agent/tools.py`).
+2. It decides a final disposition, enforced via `output_schema=DataQualityDecision`:
    - `pass` — clean, send to the model
    - `auto_correct` — confident fix from an authoritative source, with a
      full audit trail of what changed and why
    - `flag_for_review` — ambiguous, kicked to a human
-3. Everything (tool calls, reasoning, final decision) is captured in a
-   transcript for audit — important for a regulated valuation pipeline where
-   you need to explain why a record was auto-corrected.
+3. `before/after_tool_callback` (`adk_version/callbacks.py`) logs every tool
+   call's latency for observability.
 
-Run it:
-```bash
-python -m data_quality_agent.agent
-```
+Run it: `python -m adk_version.main`, or via MCP: `python -m data_quality_agent.mcp_server`.
 
 ## 2. Explainable Valuation Agent
 
 **Problem:** your model outputs "$312,000" and a SHAP vector — useless to an
 underwriter or homeowner without translation.
 
-**How it works:**
-1. **RAG**: retrieves relevant comps and market-report snippets for the
-   property (`rag.py`) so the narrative can reference real market context,
-   not just raw feature numbers.
-2. Formats the SHAP contributions into a ranked, compact block
-   (`shap_utils.py`).
-3. LLM drafts a narrative, tone-matched to the audience (`underwriter` /
+**How it works** (`adk_version/agent.py::build_valuation_explainer_agent`,
+run inside a `LoopAgent` with `grounding_checker.py::GroundingCheckerAgent`):
+1. Calls `run_valuation_model` (the mocked ML model + SHAP stand-in) on the
+   cleaned record, then `retrieve_market_context` (the real LangChain/FAISS
+   RAG pipeline) for market color.
+2. Drafts a narrative, tone-matched to the audience (`underwriter` /
    `homeowner` / `appraiser`).
-4. **Self-critique loop**: a deterministic grounding checker verifies every
-   dollar figure in the draft traces back to the actual SHAP data. If the
-   LLM invented or misquoted a number, the agent feeds that back and asks
-   for a redraft — up to a small retry budget — instead of shipping an
-   ungrounded explanation.
+3. **Self-critique loop**: `GroundingCheckerAgent` deterministically verifies
+   every dollar figure in the draft traces back to the actual model output.
+   If not, it writes feedback into session state and the `LoopAgent` runs
+   the explainer again (up to `MAX_GROUNDING_ATTEMPTS`) instead of shipping
+   an ungrounded explanation.
+4. A `before_tool_callback` guardrail (`validate_valuation_input`) rejects a
+   call to `run_valuation_model` whose record is missing a valid `sqft`
+   before the tool can crash on it.
 
-Run it:
+Run it: `python -m adk_version.main`, or via MCP: `python -m explainable_valuation_agent.mcp_server`.
+
+## Running with a real API key
+
+ADK's `LlmAgent` always calls a real model — no offline/mock mode. Two
+options:
 ```bash
-python -m explainable_valuation_agent.agent
-```
-
-## End-to-end pipeline
-
-```bash
-python orchestrate_pipeline.py
-```
-Chains: raw record → Data Quality Agent → (mocked) valuation model → SHAP →
-Explainable Valuation Agent → final narrative. Swap `mock_valuation_model()`
-for your real model + `shap.TreeExplainer(...)` call — nothing else changes.
-
-## Running with a real OpenAI key
-
-Both agents run in `MOCK_MODE` by default (see `shared/llm_client.py`) so
-you can execute and read through the full control flow without any API
-key or cost. Set a key to see real generations and real agent reasoning:
-
-```bash
-pip install -r requirements.txt
+# OpenAI, via ADK's LiteLLM bridge (default)
+pip install "google-adk[extensions]"
 export OPENAI_API_KEY=sk-...
-python orchestrate_pipeline.py
+
+# or Gemini natively
+export ADK_MODEL=gemini-2.0-flash
+export GOOGLE_API_KEY=...
 ```
-
-Note: in mock mode, the Data Quality Agent's LLM step can't actually reason
-over tool results, so it deliberately **fails closed to `flag_for_review`**
-rather than guess — with a real key and a record whose sqft matches the
-assessor record, it correctly returns `pass`. This fail-closed default is a
-reasonable production posture for a regulated pipeline too: uncertainty
-should route to a human, not to a guess.
-
-## Exposing both agents via MCP (agent interoperability)
-
-```bash
-pip install mcp
-python -m data_quality_agent.mcp_server            # stdio MCP server
-python -m explainable_valuation_agent.mcp_server    # stdio MCP server
-```
-
-Point any MCP-compatible host (Claude Desktop's config, another team's
-agent orchestrator, a Claude Agent SDK app) at these servers and they can
-call `run_data_quality_check` or `explain_valuation` without any
-custom client code — the whole point of standardizing on MCP instead of a
-bespoke REST endpoint per agent. `orchestrate_pipeline.py` calls the agents
-in-process for simplicity; in a multi-team deployment you'd swap those
-direct calls for an MCP client talking to each server over stdio/SSE.
+Then `python -m adk_version.main`, `python -m data_quality_agent.mcp_server`,
+`python -m explainable_valuation_agent.mcp_server`, or `python -m eval.run_golden_eval`
+all work the same way — same agents, different entry points.
 
 ## Concept coverage
 
 | Concept | Where |
 |---|---|
-| **LLM APIs (OpenAI)** | `shared/llm_client.py` — single integration point, native function/tool calling, chat + embeddings |
-| **AI agents** | Both `agent.py` files: the LLM decides which tools to call and when to stop, not a fixed script |
-| **Agentic frameworks** | `shared/llm_client.py::run_agent_loop` — a minimal, dependency-free ReAct-style loop (ports directly to LangChain/LlamaIndex/Claude Agent SDK executors if you want a heavier framework later; kept hand-rolled here so the control flow is fully auditable, which matters for a regulated valuation domain); `adk_version/` shows the same problem re-orchestrated with Google ADK, incl. `LoopAgent` (grounding retry) and `ParallelAgent` (concurrent per-audience narratives) |
-| **RAG** | `explainable_valuation_agent/rag.py` (hand-rolled) and `langchain_rag/` (real LangChain + FAISS pipeline, consumed by `adk_version/`) |
-| **MCP (agent interoperability)** | `shared/mcp_base.py` + both `mcp_server.py` files — tools exposed as standard MCP servers, callable by any compatible host |
+| **LLM APIs** | `adk_version/agent.py::_default_model` — OpenAI via ADK's LiteLLM bridge, or Gemini natively via `ADK_MODEL`/`GOOGLE_API_KEY` |
+| **AI agents** | `adk_version/agent.py`'s two `LlmAgent`s: the model decides which tools to call and when to stop, enforced into a structured `output_schema` on the way out |
+| **Agentic frameworks** | Google ADK — `LoopAgent` (grounding retry), `ParallelAgent` (concurrent per-audience narratives), and a custom `BaseAgent` (`PipelineOrchestratorAgent`) for the one routing decision that must stay deterministic |
+| **RAG** | `explainable_valuation_agent/rag.py` (hand-rolled baseline) and `langchain_rag/` (real LangChain + FAISS pipeline, what the ADK agent actually uses) |
+| **MCP (agent interoperability)** | `shared/mcp_base.py` + both `mcp_server.py` files — each runs an ADK agent via `adk_version/runner_utils.py` and exposes it as a standard MCP tool, callable by any compatible host |
 
 ## How are these agents evaluated?
 
 Full detail in `eval/README.md`, but the short version — evaluation happens
-at three levels:
+at two levels: ADK's `output_schema` enforces valid, schema-conformant JSON
+at the model API level, so there's no need for a defensive-parsing test on
+malformed LLM output.
 
-1. **Deterministic unit tests** (`eval/test_deterministic.py`, no LLM,
-   no API key) — checks the pure-Python logic: rule-based validators, the
-   grounding guardrail, and safe fallback behavior on malformed LLM output.
+1. **Deterministic unit tests** (`eval/test_deterministic.py`, no LLM, no
+   API key) — checks pure-Python logic that has nothing to do with agent
+   implementation: rule-based validators (`data_quality_agent/tools.py`)
+   and the grounding-check algorithm (`explainable_valuation_agent/shap_utils.py`).
    Run: `pytest eval/test_deterministic.py -v`
 2. **Golden-dataset accuracy eval** (`eval/golden_dataset.py` +
-   `eval/run_golden_eval.py`, needs a real API key for a meaningful score) —
-   labeled property records with known-correct dispositions, scored for
-   overall accuracy, precision on `auto_correct` (false positives silently
-   corrupt data), and recall on records that should be flagged (false
-   negatives let bad data reach the model). Run: `python -m eval.run_golden_eval`
-3. **End-to-end / trajectory eval** — did the agent call the *right* tools?
-   This needs transcript/log inspection, not just the final answer, since a
-   multi-step agent can reach the right answer via the wrong reasoning path.
+   `eval/run_golden_eval.py`) — labeled property records with
+   known-correct dispositions, run through `adk_version`'s real
+   `data_quality_agent` (one fresh agent + session per case, so this calls
+   a real model and costs real API calls), scored for overall accuracy,
+   precision on `auto_correct`, and recall on records that should be
+   flagged. Run: `python -m eval.run_golden_eval`
 
 None of this replaces ongoing human-review sampling in production — golden
 datasets go stale as real data drifts, live sampling doesn't.
 
 ## Extending toward production
 
-- Swap `tools.py`'s mock county-assessor/geocoder lookups for real API calls
-  (county open-data portals, USPS/Smarty, a geocoder).
-- Swap `rag.py`'s in-memory store for Chroma/pgvector and point it at a real
-  ingestion job over your MLS comp feed and market reports.
-- Wire `orchestrate_pipeline.py::mock_valuation_model` to your real model +
+- Swap `data_quality_agent/tools.py`'s mock county-assessor/geocoder
+  lookups for real API calls (county open-data portals, USPS/Smarty, a
+  geocoder).
+- Swap `langchain_rag/retriever.py`'s FAISS store for Chroma/pgvector and
+  point it at a real ingestion job over your MLS comp feed and market
+  reports.
+- Wire `adk_version/tools.py::run_valuation_model_fn` to your real model +
   `shap.TreeExplainer(model).shap_values(X)`.
-- Add persistence for the audit transcripts (`DataQualityResult.transcript`)
-  — e.g. write to a database table for compliance review.
+- Add persistence for the audit trail (today it's just `CALL_LOG` in
+  `adk_version/callbacks.py`, in-memory and process-lifetime only) — e.g.
+  write tool-call/decision history to a database table for compliance
+  review.
 - Consider a confidence threshold policy: e.g. `auto_correct` only allowed
   when `confidence >= 0.9`, else always `flag_for_review`.
