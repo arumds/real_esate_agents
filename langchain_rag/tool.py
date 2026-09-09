@@ -10,7 +10,7 @@ interoperability bridge:
     CrewAI: crewai.tools.base_tool.BaseTool.from_langchain(retrieve_market_context)
 
 Neither framework needs a reimplementation of this tool -- that's the point.
-See adk_version/tools.py and crewai_version/tools.py for where each bridge
+See real_estate_agents/tools.py and the CrewAI adapter's tools.py for where each bridge
 is used.
 """
 
