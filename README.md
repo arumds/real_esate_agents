@@ -61,6 +61,14 @@ primitives instead of a hand-rolled Python script:
   grounding check from the hand-rolled version as a custom non-LLM
   `BaseAgent`, sitting inside a `LoopAgent` alongside the explainer agent,
   escalating (breaking the loop) only once the check passes.
+- **Fan-out**: `orchestrator.py::build_multi_audience_pipeline` uses a
+  `ParallelAgent` to generate the homeowner/underwriter/appraiser
+  narratives concurrently — one `(explainer, grounding_checker)` `LoopAgent`
+  per audience, each writing to its own `valuation_explanation_raw__<audience>`
+  session-state key so the concurrent branches don't clobber each other.
+  `PipelineOrchestratorAgent` doesn't care whether it's handed this
+  `ParallelAgent` or the single-audience `LoopAgent` — same deterministic
+  gate either way.
 - **Model provider**: ADK defaults to Gemini. Using OpenAI (to stay
   consistent with the rest of this repo) requires ADK's LiteLLM bridge:
   `pip install "google-adk[extensions]"`.
@@ -69,7 +77,7 @@ Run it:
 ```bash
 pip install "google-adk[extensions]"
 export OPENAI_API_KEY=sk-...
-python -m adk_version.main
+python -m adk_version.main   # runs both the single-audience and multi-audience (ParallelAgent) demos
 ```
 
 ## A real RAG pipeline: LangChain
@@ -192,7 +200,7 @@ direct calls for an MCP client talking to each server over stdio/SSE.
 |---|---|
 | **LLM APIs (OpenAI)** | `shared/llm_client.py` — single integration point, native function/tool calling, chat + embeddings |
 | **AI agents** | Both `agent.py` files: the LLM decides which tools to call and when to stop, not a fixed script |
-| **Agentic frameworks** | `shared/llm_client.py::run_agent_loop` — a minimal, dependency-free ReAct-style loop (ports directly to LangChain/LlamaIndex/Claude Agent SDK executors if you want a heavier framework later; kept hand-rolled here so the control flow is fully auditable, which matters for a regulated valuation domain); `adk_version/` shows the same problem re-orchestrated with Google ADK |
+| **Agentic frameworks** | `shared/llm_client.py::run_agent_loop` — a minimal, dependency-free ReAct-style loop (ports directly to LangChain/LlamaIndex/Claude Agent SDK executors if you want a heavier framework later; kept hand-rolled here so the control flow is fully auditable, which matters for a regulated valuation domain); `adk_version/` shows the same problem re-orchestrated with Google ADK, incl. `LoopAgent` (grounding retry) and `ParallelAgent` (concurrent per-audience narratives) |
 | **RAG** | `explainable_valuation_agent/rag.py` (hand-rolled) and `langchain_rag/` (real LangChain + FAISS pipeline, consumed by `adk_version/`) |
 | **MCP (agent interoperability)** | `shared/mcp_base.py` + both `mcp_server.py` files — tools exposed as standard MCP servers, callable by any compatible host |
 

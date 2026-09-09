@@ -90,48 +90,77 @@ def build_data_quality_agent() -> Agent:
     )
 
 
-def _valuation_instruction(context: ReadonlyContext) -> str:
-    audience = context.state.get("audience", "homeowner")
-    property_summary = context.state.get("property_summary", "")
+def _make_valuation_instruction(fixed_audience: str | None = None):
+    """
+    Returns an instruction callable for the valuation explainer agent.
 
-    base = (
-        "You are a valuation explainability specialist. Read "
-        "'data_quality_decision_raw' from session state -- it is a "
-        "DataQualityDecision JSON object.\n\n"
-        "If its disposition is 'flag_for_review', respond with a "
-        "ValuationExplanation where halted=true, predicted_price=0, "
-        "base_value=0, contributions=[], and narrative explains the "
-        "pipeline stopped for human review. Do NOT call any tools in this "
-        "case.\n\n"
-        "Otherwise: call run_valuation_model on the 'final_record' field "
-        f"from that decision. Then call retrieve_market_context with this "
-        f"property summary for color: '{property_summary}'. Write a "
-        f"narrative explanation for this audience: {audience}. Use ONLY "
-        "the dollar figures the run_valuation_model tool actually "
-        "returned -- never invent or round differently. You may reference "
-        "retrieved market context for color, but never state a comp's sale "
-        "price as if it were a contribution to THIS property's valuation. "
-        "Echo back the exact predicted_price, base_value, and "
-        "contributions you used, matching the tool's return value exactly."
-    )
+    `fixed_audience=None` is the original single-agent path: audience comes
+    from shared session state (key 'audience') and grounding retry feedback
+    lives under the shared key 'grounding_feedback'.
 
-    feedback = context.state.get("grounding_feedback")
-    if feedback:
-        base += (
-            f"\n\nYOUR PREVIOUS ATTEMPT FAILED A GROUNDING CHECK: {feedback} "
-            "Rewrite the narrative using ONLY the figures listed as valid."
+    A non-None `fixed_audience` is for the multi-audience ParallelAgent
+    branch (see orchestrator.py::build_multi_audience_pipeline): several of
+    these agents run concurrently, one per audience, so each needs its
+    audience baked in rather than read from a session-state key they'd all
+    share, and its own feedback key so one branch's retry doesn't leak into
+    another's.
+    """
+
+    def _instruction(context: ReadonlyContext) -> str:
+        audience = fixed_audience or context.state.get("audience", "homeowner")
+        property_summary = context.state.get("property_summary", "")
+        feedback_key = f"grounding_feedback__{fixed_audience}" if fixed_audience else "grounding_feedback"
+
+        base = (
+            "You are a valuation explainability specialist. Read "
+            "'data_quality_decision_raw' from session state -- it is a "
+            "DataQualityDecision JSON object.\n\n"
+            "If its disposition is 'flag_for_review', respond with a "
+            "ValuationExplanation where halted=true, predicted_price=0, "
+            "base_value=0, contributions=[], and narrative explains the "
+            "pipeline stopped for human review. Do NOT call any tools in this "
+            "case.\n\n"
+            "Otherwise: call run_valuation_model on the 'final_record' field "
+            f"from that decision. Then call retrieve_market_context with this "
+            f"property summary for color: '{property_summary}'. Write a "
+            f"narrative explanation for this audience: {audience}. Use ONLY "
+            "the dollar figures the run_valuation_model tool actually "
+            "returned -- never invent or round differently. You may reference "
+            "retrieved market context for color, but never state a comp's sale "
+            "price as if it were a contribution to THIS property's valuation. "
+            "Echo back the exact predicted_price, base_value, and "
+            "contributions you used, matching the tool's return value exactly."
         )
 
-    return base
+        feedback = context.state.get(feedback_key)
+        if feedback:
+            base += (
+                f"\n\nYOUR PREVIOUS ATTEMPT FAILED A GROUNDING CHECK: {feedback} "
+                "Rewrite the narrative using ONLY the figures listed as valid."
+            )
+
+        return base
+
+    return _instruction
 
 
-def build_valuation_explainer_agent() -> Agent:
+def build_valuation_explainer_agent(audience: str | None = None) -> Agent:
+    """
+    audience=None (default): single agent, audience read from session state
+    -- used by orchestrator.py::build_pipeline.
+
+    audience="homeowner"/"underwriter"/"appraiser": a fixed-audience branch
+    with a unique name/output_key, so N of these can run concurrently under
+    a ParallelAgent without clobbering each other's session state -- used by
+    orchestrator.py::build_multi_audience_pipeline.
+    """
+    suffix = f"__{audience}" if audience else ""
     return Agent(
-        name="valuation_explainer_agent",
+        name=f"valuation_explainer_agent{suffix}",
         model=_default_model(),
         description="Runs the valuation model and explains its output for a given audience.",
-        instruction=_valuation_instruction,
+        instruction=_make_valuation_instruction(audience),
         tools=VALUATION_EXPLAINER_TOOLS,
         output_schema=ValuationExplanation,
-        output_key="valuation_explanation_raw",
+        output_key=f"valuation_explanation_raw{suffix}",
     )

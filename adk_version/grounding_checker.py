@@ -60,10 +60,28 @@ class GroundingCheckerAgent(BaseAgent):
     """
     Non-LLM agent: deterministically validates the valuation explainer's
     last output and decides whether the enclosing LoopAgent should stop.
+
+    `valuation_output_key`/`feedback_key` default to the single-agent
+    pipeline's shared keys. When several (explainer, checker) LoopAgents run
+    concurrently under a ParallelAgent -- one per audience -- each checker
+    must be pointed at its own branch's keys instead, so retries in one
+    branch don't read/write another's state (see
+    orchestrator.py::build_multi_audience_pipeline).
     """
 
+    valuation_output_key: str = "valuation_explanation_raw"
+    feedback_key: str = "grounding_feedback"
+
+    def __init__(
+        self,
+        name: str,
+        valuation_output_key: str = "valuation_explanation_raw",
+        feedback_key: str = "grounding_feedback",
+    ):
+        super().__init__(name=name, valuation_output_key=valuation_output_key, feedback_key=feedback_key)
+
     async def _run_async_impl(self, ctx: InvocationContext) -> AsyncGenerator[Event, None]:
-        raw = ctx.session.state.get("valuation_explanation_raw")
+        raw = ctx.session.state.get(self.valuation_output_key)
         if raw is None:
             # Nothing produced yet (shouldn't happen if this runs after the
             # explainer agent in the loop) -- fail safe by not escalating,
@@ -89,10 +107,11 @@ class GroundingCheckerAgent(BaseAgent):
             return
 
         # Not grounded: stash feedback in state for the explainer's next
-        # attempt (see _valuation_instruction reading 'grounding_feedback'),
-        # and do NOT escalate so the LoopAgent runs the explainer again.
+        # attempt (see agents.py::_make_valuation_instruction reading this
+        # same feedback_key), and do NOT escalate so the LoopAgent runs the
+        # explainer again.
         yield Event(
             author=self.name,
             content=types.Content(role="model", parts=[types.Part(text=f"Grounding check failed: {feedback}")]),
-            actions=EventActions(escalate=False, state_delta={"grounding_feedback": feedback}),
+            actions=EventActions(escalate=False, state_delta={self.feedback_key: feedback}),
         )
