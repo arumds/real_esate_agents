@@ -32,7 +32,29 @@ from real_estate_agents.data_quality_agent.tools import (
 from real_estate_agents.langchain_rag.tool import retrieve_market_context as _lc_retrieve_market_context
 from real_estate_agents.schemas import PropertyRecord
 
-check_field_completeness = FunctionTool(_check_field_completeness)
+def check_field_completeness_fn(record: PropertyRecord) -> dict:
+    """
+    ADK-facing wrapper around data_quality_agent.tools.check_field_completeness.
+
+    Typed with PropertyRecord instead of that function's own bare
+    `dict[str, Any]` parameter, for the same reason run_valuation_model_fn
+    is -- an open-ended dict doesn't declare cleanly in every
+    function-declaration schema format ADK can emit. Confirmed live: with
+    ADK_DISABLE_JSON_SCHEMA_FOR_FUNC_DECL=true, the model called the
+    original dict-typed tool with an empty {} eight times in a row before
+    giving up on it, while every other (plain str/float-typed) tool call
+    in the same run got correct arguments every time.
+
+    Converts to a plain dict and delegates straight to the original
+    function, which stays completely unchanged -- it's still called
+    directly with plain dict literals elsewhere (eval/test_deterministic.py,
+    the MCP server's own exposed tool), and this wrapper doesn't touch
+    that single source of truth.
+    """
+    return _check_field_completeness(record.model_dump())
+
+
+check_field_completeness = FunctionTool(check_field_completeness_fn)
 geocode_and_validate_address = FunctionTool(_geocode_and_validate_address)
 lookup_county_assessor_record = FunctionTool(_lookup_county_assessor_record)
 compare_reported_vs_authoritative = FunctionTool(_compare_reported_vs_authoritative)
