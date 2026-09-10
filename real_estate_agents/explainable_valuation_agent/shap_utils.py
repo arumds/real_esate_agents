@@ -1,5 +1,5 @@
 """
-explainable_valuation_agent/shap_utils.py
+real_estate_agents/explainable_valuation_agent/shap_utils.py
 
 Utilities for turning raw SHAP (or any additive feature-attribution) output
 from the valuation ML model into a structured, LLM-friendly format.

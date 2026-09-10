@@ -1,5 +1,5 @@
 """
-explainable_valuation_agent/rag.py
+real_estate_agents/explainable_valuation_agent/rag.py
 
 Minimal in-memory RAG layer: embeds a small corpus of market reports and
 comparable-sale writeups, and retrieves the top-k most relevant chunks for a
@@ -19,7 +19,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass
 
-from shared.llm_client import embed
+from real_estate_agents.shared.llm_client import embed
 
 # Small demo corpus: comp writeups + market commentary. In production this
 # would be populated by an ingestion job (MLS feed, market report scraper).
