@@ -3,33 +3,20 @@
 Two agents that sit around your existing valuation / rental prediction ML
 models — they don't replace the models, they clean the data going in and
 explain the output coming out. One agent implementation, built on Google's
-Agent Development Kit (`real_estate_agents/`), consumed three different ways:
-directly (`real_estate_agents/main.py` or `adk web`), over MCP
-(`data_quality_agent/mcp_server.py`, `explainable_valuation_agent/mcp_server.py`),
-and by the eval harness (`eval/run_golden_eval.py`). A real LangChain RAG
-pipeline (`langchain_rag/`) backs the valuation explainer. `data_quality_agent/`
-and `explainable_valuation_agent/` hold deterministic tools/utilities and an
-MCP transport layer; all agent reasoning lives in `real_estate_agents/agent.py`.
+Agent Development Kit, packaged as a single self-contained Python package
+(`real_estate_agents/`) so it deploys as one unit to Vertex AI Agent Engine
+with no extra staging steps. Consumed three different ways: directly
+(`real_estate_agents/main.py` or `adk web`), over MCP
+(`real_estate_agents/data_quality_agent/mcp_server.py`,
+`real_estate_agents/explainable_valuation_agent/mcp_server.py`), and by the
+eval harness (`eval/run_golden_eval.py`). A real LangChain RAG pipeline
+(`real_estate_agents/langchain_rag/`) backs the valuation explainer.
 
 ```
-real_estate_agents/
-├── shared/
-│   ├── llm_client.py      # OpenAI wrapper: chat/embed. embed() feeds rag.py and langchain_rag/embeddings.py
-│   └── mcp_base.py        # Helper to expose any tool set as an MCP server
-├── data_quality_agent/
-│   ├── tools.py           # Validators + mocked secondary-source lookups (single source
-│   │                       # of truth -- also wrapped as FunctionTools in real_estate_agents/tools.py)
-│   └── mcp_server.py      # MCP transport: runs the data_quality_agent from real_estate_agents/ via runner_utils.py
-├── explainable_valuation_agent/
-│   ├── rag.py             # Simple in-memory vector store -- a baseline to compare
-│   │                       # against langchain_rag/'s real pipeline
-│   ├── shap_utils.py      # SHAP formatting + a grounding-check reference implementation
-│   └── mcp_server.py      # MCP transport: runs the valuation loop from real_estate_agents/ via runner_utils.py
-├── langchain_rag/          # Real LangChain RAG pipeline, consumed by real_estate_agents/
-│   ├── embeddings.py        # Custom Embeddings adapter reusing shared/llm_client.py::embed()
-│   ├── retriever.py         # RecursiveCharacterTextSplitter + FAISS vectorstore
-│   └── tool.py               # The single @tool consumed by real_estate_agents/
-├── real_estate_agents/     # The agent implementation -- everything else calls into this
+real_estate_agents/                        (repo root)
+├── real_estate_agents/                    # The agent package -- everything below is
+│   │                                       # importable as real_estate_agents.<...> and
+│   │                                       # deployable as one self-contained unit
 │   ├── schemas.py          # Pydantic output schemas (DataQualityDecision, ValuationExplanation)
 │   ├── tools.py            # Wraps data_quality_agent/tools.py + langchain_rag as ADK tools
 │   ├── agent.py            # Both LlmAgents + PipelineOrchestratorAgent + root_agent (ADK's auto-discovery entry point)
@@ -41,16 +28,38 @@ real_estate_agents/
 │   ├── main.py             # Demo entry point using Runner + InMemorySessionService
 │   ├── .env                # Deploy-time secrets (gitignored) -- adk deploy agent_engine reads
 │   │                       # a .env from *this* folder specifically, not the repo root's
-│   └── requirements.txt    # Deploy-time deps for THIS package only (langchain-core, openai, etc.) --
-│                           # adk deploy agent_engine looks for a requirements.txt inside this
-│                           # folder too; without one it silently generates a near-empty one
+│   ├── requirements.txt    # Deploy-time deps (langchain-core, openai, etc.) -- adk deploy
+│   │                       # agent_engine looks for a requirements.txt inside this folder too
+│   ├── data_quality_agent/
+│   │   ├── tools.py           # Validators + mocked secondary-source lookups (single source
+│   │   │                       # of truth -- also wrapped as FunctionTools in ../tools.py)
+│   │   └── mcp_server.py      # MCP transport: runs the data_quality_agent via ../runner_utils.py
+│   ├── explainable_valuation_agent/
+│   │   ├── rag.py             # Simple in-memory vector store -- a baseline to compare
+│   │   │                       # against langchain_rag/'s real pipeline
+│   │   ├── shap_utils.py      # SHAP formatting + a grounding-check reference implementation
+│   │   └── mcp_server.py      # MCP transport: runs the valuation loop via ../runner_utils.py
+│   ├── langchain_rag/         # Real LangChain RAG pipeline, consumed by ../tools.py
+│   │   ├── embeddings.py        # Custom Embeddings adapter reusing shared/llm_client.py::embed()
+│   │   ├── retriever.py         # RecursiveCharacterTextSplitter + FAISS vectorstore
+│   │   └── tool.py               # The single @tool consumed by ../tools.py
+│   └── shared/
+│       ├── llm_client.py      # OpenAI wrapper: chat/embed. embed() feeds langchain_rag/embeddings.py
+│       └── mcp_base.py        # Helper to expose any tool set as an MCP server
 ├── eval/                   # Evaluation harness (see eval/README.md)
 │   ├── test_deterministic.py  # Pure-Python logic only -- no LLM, no ADK
 │   ├── golden_dataset.py
-│   └── run_golden_eval.py     # Runs the data_quality_agent from real_estate_agents/ over the golden dataset
+│   └── run_golden_eval.py     # Runs the data_quality_agent over the golden dataset
 ├── genai_engineer_prep_plan.md # Personal study/prep notes, not part of the pipeline
-└── requirements.txt
+└── requirements.txt        # Full dev/test dependency set (includes eval/mcp/dev-only extras
+                             # the deploy-scoped real_estate_agents/requirements.txt omits)
 ```
+
+Everything the ADK agent actually needs at runtime — its own code plus
+`data_quality_agent/`, `explainable_valuation_agent/`, `langchain_rag/`,
+and `shared/` — lives *inside* `real_estate_agents/`, so `adk deploy
+agent_engine real_estate_agents/` bundles the whole dependency tree in one
+shot with no extra flags.
 
 ## Architecture
 
@@ -144,7 +153,7 @@ by importing this file.
 Run it end to end:
 ```bash
 pip install "google-adk[extensions]"
-export OPENAI_API_KEY=sk-...   # or: export ADK_MODEL=gemini-2.0-flash GOOGLE_API_KEY=...
+export OPENAI_API_KEY=sk-...   # or: export ADK_MODEL=gemini-2.5-flash GOOGLE_API_KEY=...
 python -m real_estate_agents.main     # runs both the single-audience and multi-audience (ParallelAgent) demos
 ```
 
@@ -163,7 +172,7 @@ out of the message when session state doesn't have it yet.
 
 Sample prompts to paste in (more in `eval/test_deterministic.py`'s trailing
 comment, covering `pass`/`flag_for_review`/`auto_correct` cases against the
-mocked assessor records in `data_quality_agent/tools.py`):
+mocked assessor records in `real_estate_agents/data_quality_agent/tools.py`):
 ```
 Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Maple St, Springfield, IL 62701", "sqft": 1840, "bedrooms": 3, "bathrooms": 2, "year_built": 1998, "list_price": 289000}
 ```
@@ -180,6 +189,10 @@ pip install google-cloud-aiplatform
 adk deploy agent_engine --project=<PROJECT_ID> --region=us-central1 \
   --display_name="Real Estate Pipeline" real_estate_agents/
 ```
+No `--extra_packages` needed — `data_quality_agent/`, `explainable_valuation_agent/`,
+`langchain_rag/`, and `shared/` all live inside `real_estate_agents/`, so
+the single `agent_folder` argument already bundles the whole import chain.
+
 Two things ADK's deploy step reads from *inside* `real_estate_agents/`
 specifically (the `agent_folder` argument), not the repo root:
 - **`.env`** (gitignored) — its key/values become the deployed resource's
@@ -188,22 +201,24 @@ specifically (the `agent_folder` argument), not the repo root:
   `GOOGLE_API_KEY` configured at all.
 - **`requirements.txt`** — without one here, ADK silently generates a
   near-empty one (just `google-adk[a2a]==<version>`), and the deployed
-  module fails to import with `ModuleNotFoundError: No module named
-  'langchain_core'` (or `openai`) the first time it's invoked.
+  module fails to import with `ModuleNotFoundError` for whatever this
+  package actually needs (`langchain_core`, `openai`, etc.).
 
 If you're routing through Vertex AI rather than the plain Gemini
 Developer API (`GOOGLE_GENAI_USE_ENTERPRISE=1` in `.env`), confirm the
 model you set in `ADK_MODEL` is actually served as a Vertex publisher
 model for your project/region first — not every model ID available on
-the Developer API is available (or named identically) on Vertex.
+the Developer API is available (or named identically) on Vertex. Add
+`--otel_to_cloud` to the deploy command to export OpenTelemetry traces to
+Cloud Trace/Cloud Logging.
 
-## How the two domain packages fit in
+## How the two domain subpackages fit in
 
-`data_quality_agent/` and `explainable_valuation_agent/` hold the
-deterministic tool functions each ADK `FunctionTool` wraps
-(`data_quality_agent/tools.py`), a simple RAG baseline
-(`explainable_valuation_agent/rag.py`), and an `mcp_server.py` per package
-that exposes an ADK agent over MCP:
+`real_estate_agents/data_quality_agent/` and
+`real_estate_agents/explainable_valuation_agent/` hold the deterministic
+tool functions each ADK `FunctionTool` wraps (`data_quality_agent/tools.py`),
+a simple RAG baseline (`explainable_valuation_agent/rag.py`), and an
+`mcp_server.py` per package that exposes an ADK agent over MCP:
 
 - `data_quality_agent/mcp_server.py::run_data_quality_check` builds
   `real_estate_agents.agent.build_data_quality_agent()` and runs it via
@@ -234,8 +249,8 @@ Run the MCP servers:
 ```bash
 pip install mcp "google-adk[extensions]"
 export OPENAI_API_KEY=sk-...   # or ADK_MODEL + GOOGLE_API_KEY for Gemini
-python -m data_quality_agent.mcp_server            # stdio MCP server
-python -m explainable_valuation_agent.mcp_server    # stdio MCP server
+python -m real_estate_agents.data_quality_agent.mcp_server            # stdio MCP server
+python -m real_estate_agents.explainable_valuation_agent.mcp_server    # stdio MCP server
 ```
 Point any MCP-compatible host (Claude Desktop's config, another team's
 agent orchestrator, a Claude Agent SDK app) at these servers and they can
@@ -244,12 +259,13 @@ client code.
 
 ## A real RAG pipeline: LangChain
 
-`langchain_rag/tool.py` is a **real RAG pipeline** — `RecursiveCharacterTextSplitter`
-chunks the comp/market-report corpus, a `SharedLLMEmbeddings` adapter (wrapping
-this repo's existing `shared/llm_client.py::embed()`, so no second embeddings
-provider) feeds a `FAISS` vectorstore, and a LangChain `@tool` wraps the
-resulting similarity search. `real_estate_agents/tools.py` consumes this tool
-directly via ADK's own LangChain bridge:
+`real_estate_agents/langchain_rag/tool.py` is a **real RAG pipeline** —
+`RecursiveCharacterTextSplitter` chunks the comp/market-report corpus, a
+`SharedLLMEmbeddings` adapter (wrapping this repo's existing
+`shared/llm_client.py::embed()`, so no second embeddings provider) feeds a
+`FAISS` vectorstore, and a LangChain `@tool` wraps the resulting similarity
+search. `real_estate_agents/tools.py` consumes this tool directly via
+ADK's own LangChain bridge:
 
 ```python
 # real_estate_agents/tools.py
@@ -280,7 +296,8 @@ addresses, missing fields — garbage in, garbage valuations out.
 3. `before/after_tool_callback` (`real_estate_agents/callbacks.py`) logs every tool
    call's latency for observability.
 
-Run it: `python -m real_estate_agents.main`, or via MCP: `python -m data_quality_agent.mcp_server`.
+Run it: `python -m real_estate_agents.main`, or via MCP:
+`python -m real_estate_agents.data_quality_agent.mcp_server`.
 
 ## 2. Explainable Valuation Agent
 
@@ -303,7 +320,8 @@ run inside a `LoopAgent` with `grounding_checker.py::GroundingCheckerAgent`):
    call to `run_valuation_model` whose record is missing a valid `sqft`
    before the tool can crash on it.
 
-Run it: `python -m real_estate_agents.main`, or via MCP: `python -m explainable_valuation_agent.mcp_server`.
+Run it: `python -m real_estate_agents.main`, or via MCP:
+`python -m real_estate_agents.explainable_valuation_agent.mcp_server`.
 
 ## Running with a real API key
 
@@ -315,12 +333,14 @@ pip install "google-adk[extensions]"
 export OPENAI_API_KEY=sk-...
 
 # or Gemini natively
-export ADK_MODEL=gemini-2.0-flash
+export ADK_MODEL=gemini-2.5-flash
 export GOOGLE_API_KEY=...
 ```
-Then `python -m real_estate_agents.main`, `python -m data_quality_agent.mcp_server`,
-`python -m explainable_valuation_agent.mcp_server`, or `python -m eval.run_golden_eval`
-all work the same way — same agents, different entry points.
+Then `python -m real_estate_agents.main`,
+`python -m real_estate_agents.data_quality_agent.mcp_server`,
+`python -m real_estate_agents.explainable_valuation_agent.mcp_server`, or
+`python -m eval.run_golden_eval` all work the same way — same agents,
+different entry points.
 
 ## Concept coverage
 
@@ -346,7 +366,7 @@ malformed LLM output.
    Run: `pytest eval/test_deterministic.py -v`
 2. **Golden-dataset accuracy eval** (`eval/golden_dataset.py` +
    `eval/run_golden_eval.py`) — labeled property records with
-   known-correct dispositions, run through `real_estate_agents/`'s real
+   known-correct dispositions, run through `real_estate_agents`'s real
    `data_quality_agent` (one fresh agent + session per case, so this calls
    a real model and costs real API calls), scored for overall accuracy,
    precision on `auto_correct`, and recall on records that should be
