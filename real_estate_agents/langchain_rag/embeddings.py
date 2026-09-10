@@ -1,5 +1,5 @@
 """
-langchain_rag/embeddings.py
+real_estate_agents/langchain_rag/embeddings.py
 
 Custom LangChain `Embeddings` adapter around this repo's existing
 `shared/llm_client.py::embed()` function. This means the LangChain RAG
@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from langchain_core.embeddings import Embeddings
 
-from shared.llm_client import embed
+from real_estate_agents.shared.llm_client import embed
 
 
 class SharedLLMEmbeddings(Embeddings):

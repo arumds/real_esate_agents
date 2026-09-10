@@ -1,5 +1,5 @@
 """
-langchain_rag/tool.py
+real_estate_agents/langchain_rag/tool.py
 
 The actual cross-framework deliverable: ONE LangChain tool for market-
 context retrieval, built once here, then consumed by BOTH the CrewAI and
@@ -18,7 +18,7 @@ from __future__ import annotations
 
 from langchain_core.tools import tool
 
-from langchain_rag.retriever import get_vectorstore
+from real_estate_agents.langchain_rag.retriever import get_vectorstore
 
 
 @tool

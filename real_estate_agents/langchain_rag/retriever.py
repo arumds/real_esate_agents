@@ -1,5 +1,5 @@
 """
-langchain_rag/retriever.py
+real_estate_agents/langchain_rag/retriever.py
 
 A real LangChain RAG pipeline over the same demo corpus used by the
 hand-rolled version (explainable_valuation_agent/rag.py::CORPUS):
@@ -26,8 +26,8 @@ from langchain_community.vectorstores import FAISS
 from langchain_core.documents import Document
 from langchain_text_splitters import RecursiveCharacterTextSplitter
 
-from explainable_valuation_agent.rag import CORPUS
-from langchain_rag.embeddings import SharedLLMEmbeddings
+from real_estate_agents.explainable_valuation_agent.rag import CORPUS
+from real_estate_agents.langchain_rag.embeddings import SharedLLMEmbeddings
 
 _vectorstore: FAISS | None = None
 
