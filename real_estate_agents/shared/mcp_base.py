@@ -1,5 +1,5 @@
 """
-shared/mcp_base.py
+real_estate_agents/shared/mcp_base.py
 
 Thin convenience layer over the official `mcp` Python SDK (FastMCP) so each
 agent project can expose its tools as a standard MCP server with minimal
@@ -16,7 +16,7 @@ Install:
     pip install mcp
 
 Run a server module directly, e.g.:
-    python -m data_quality_agent.mcp_server
+    python -m real_estate_agents.data_quality_agent.mcp_server
 """
 
 from __future__ import annotations

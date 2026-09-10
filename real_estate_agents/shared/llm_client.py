@@ -1,5 +1,5 @@
 """
-shared/llm_client.py
+real_estate_agents/shared/llm_client.py
 
 Thin wrapper around the OpenAI Chat Completions API that adds:
   - native function/tool calling (the mechanism every agent in this repo uses
