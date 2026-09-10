@@ -1,5 +1,5 @@
 """
-data_quality_agent/tools.py
+real_estate_agents/data_quality_agent/tools.py
 
 Deterministic validators + mocked "secondary source" lookups the agent can
 call as tools. In production, `lookup_county_assessor_record` and

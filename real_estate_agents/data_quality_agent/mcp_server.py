@@ -1,5 +1,5 @@
 """
-data_quality_agent/mcp_server.py
+real_estate_agents/data_quality_agent/mcp_server.py
 
 Exposes the data quality agent as an MCP server: the individual validation
 tools (for other agents/hosts to compose freely) AND a single high-level
@@ -15,7 +15,7 @@ FunctionTool wrappers (real_estate_agents/tools.py) wrap underneath.
 Run:
     pip install mcp "google-adk[extensions]"
     export OPENAI_API_KEY=sk-...   # or ADK_MODEL + GOOGLE_API_KEY for Gemini
-    python -m data_quality_agent.mcp_server
+    python -m real_estate_agents.data_quality_agent.mcp_server
 
 Then point any MCP-compatible host (Claude Desktop config, another agent's
 MCP client) at this server via stdio.
@@ -27,13 +27,13 @@ from dotenv import load_dotenv
 
 from real_estate_agents.agent import build_data_quality_agent
 from real_estate_agents.runner_utils import parse_output, run_agent
-from data_quality_agent.tools import (
+from real_estate_agents.data_quality_agent.tools import (
     check_field_completeness,
     compare_reported_vs_authoritative,
     geocode_and_validate_address,
     lookup_county_assessor_record,
 )
-from shared.mcp_base import build_mcp_server
+from real_estate_agents.shared.mcp_base import build_mcp_server
 
 load_dotenv()
 
