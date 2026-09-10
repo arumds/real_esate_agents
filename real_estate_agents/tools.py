@@ -23,13 +23,13 @@ from __future__ import annotations
 from google.adk.tools import FunctionTool
 from google.adk.tools.langchain_tool import LangchainTool
 
-from data_quality_agent.tools import (
+from real_estate_agents.data_quality_agent.tools import (
     check_field_completeness as _check_field_completeness,
     compare_reported_vs_authoritative as _compare_reported_vs_authoritative,
     geocode_and_validate_address as _geocode_and_validate_address,
     lookup_county_assessor_record as _lookup_county_assessor_record,
 )
-from langchain_rag.tool import retrieve_market_context as _lc_retrieve_market_context
+from real_estate_agents.langchain_rag.tool import retrieve_market_context as _lc_retrieve_market_context
 
 check_field_completeness = FunctionTool(_check_field_completeness)
 geocode_and_validate_address = FunctionTool(_geocode_and_validate_address)
