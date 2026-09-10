@@ -10,8 +10,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from data_quality_agent.tools import check_field_completeness, compare_reported_vs_authoritative
-from explainable_valuation_agent.shap_utils import (
+from real_estate_agents.data_quality_agent.tools import check_field_completeness, compare_reported_vs_authoritative
+from real_estate_agents.explainable_valuation_agent.shap_utils import (
     FeatureContribution,
     ValuationExplanationInput,
     check_narrative_grounding,
@@ -95,13 +95,10 @@ def test_grounding_check_rejects_hallucinated_figure():
     assert 55000 in result["unsupported_dollar_figures"]
 
 
-# Note: there used to be a test here for a hand-rolled JSON-parsing fallback
-# (data_quality_agent/agent.py::_safe_parse_json, fail-closed on malformed
-# LLM output). That code -- and the failure mode it guarded against -- no
-# longer exists: data_quality_agent/mcp_server.py now runs the ADK
-# LlmAgent (real_estate_agents/agent.py), whose output_schema enforces valid,
-# schema-conformant JSON at the model API level, so there's no free-text
-# LLM output left to parse defensively.
+# Note: no test here for malformed-LLM-JSON fallback parsing -- the data
+# quality agent (real_estate_agents/agent.py) runs through ADK's
+# output_schema, which enforces valid, schema-conformant JSON at the model
+# API level, so there's no free-text LLM output to parse defensively.
 
 
 if __name__ == "__main__":
