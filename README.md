@@ -38,7 +38,12 @@ real_estate_agents/
 │   ├── runner_utils.py     # run_agent(agent, state, trigger_text) -- lets sync callers
 │   │                       # (the MCP servers, eval/run_golden_eval.py) call an ADK agent
 │   │                       # like a plain function instead of each wiring Runner/SessionService
-│   └── main.py             # Demo entry point using Runner + InMemorySessionService
+│   ├── main.py             # Demo entry point using Runner + InMemorySessionService
+│   ├── .env                # Deploy-time secrets (gitignored) -- adk deploy agent_engine reads
+│   │                       # a .env from *this* folder specifically, not the repo root's
+│   └── requirements.txt    # Deploy-time deps for THIS package only (langchain-core, openai, etc.) --
+│                           # adk deploy agent_engine looks for a requirements.txt inside this
+│                           # folder too; without one it silently generates a near-empty one
 ├── eval/                   # Evaluation harness (see eval/README.md)
 │   ├── test_deterministic.py  # Pure-Python logic only -- no LLM, no ADK
 │   ├── golden_dataset.py
@@ -167,6 +172,30 @@ Validate this property record: {"parcel_id": "PARCEL-10234", "address": "123 Map
 ```
 The first matches the mocked assessor record exactly (`pass`); the second
 is a 33% sqft discrepancy against the same parcel (`flag_for_review`).
+
+### Deploying to Vertex AI Agent Engine
+
+```bash
+pip install google-cloud-aiplatform
+adk deploy agent_engine --project=<PROJECT_ID> --region=us-central1 \
+  --display_name="Real Estate Pipeline" real_estate_agents/
+```
+Two things ADK's deploy step reads from *inside* `real_estate_agents/`
+specifically (the `agent_folder` argument), not the repo root:
+- **`.env`** (gitignored) — its key/values become the deployed resource's
+  runtime `env_vars` (via `dotenv_values`, not a raw file copy). Without
+  one here, the deployed agent has no `OPENAI_API_KEY`/`ADK_MODEL`/
+  `GOOGLE_API_KEY` configured at all.
+- **`requirements.txt`** — without one here, ADK silently generates a
+  near-empty one (just `google-adk[a2a]==<version>`), and the deployed
+  module fails to import with `ModuleNotFoundError: No module named
+  'langchain_core'` (or `openai`) the first time it's invoked.
+
+If you're routing through Vertex AI rather than the plain Gemini
+Developer API (`GOOGLE_GENAI_USE_ENTERPRISE=1` in `.env`), confirm the
+model you set in `ADK_MODEL` is actually served as a Vertex publisher
+model for your project/region first — not every model ID available on
+the Developer API is available (or named identically) on Vertex.
 
 ## How the two domain packages fit in
 
