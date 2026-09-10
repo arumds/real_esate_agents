@@ -30,6 +30,7 @@ from real_estate_agents.data_quality_agent.tools import (
     lookup_county_assessor_record as _lookup_county_assessor_record,
 )
 from real_estate_agents.langchain_rag.tool import retrieve_market_context as _lc_retrieve_market_context
+from real_estate_agents.schemas import PropertyRecord
 
 check_field_completeness = FunctionTool(_check_field_completeness)
 geocode_and_validate_address = FunctionTool(_geocode_and_validate_address)
@@ -38,7 +39,7 @@ compare_reported_vs_authoritative = FunctionTool(_compare_reported_vs_authoritat
 retrieve_market_context = LangchainTool(_lc_retrieve_market_context)
 
 
-def run_valuation_model_fn(record: dict) -> dict:
+def run_valuation_model_fn(record: PropertyRecord) -> dict:
     """
     Run the (mocked) valuation ML model + SHAP explainer on a cleaned
     property record. Replace the body with a real call to your model +
@@ -46,7 +47,11 @@ def run_valuation_model_fn(record: dict) -> dict:
 
     Args:
         record: a cleaned property record (post data-quality checks) with
-            at least 'sqft'.
+            at least 'sqft' set. Typed as PropertyRecord (not a bare dict)
+            so the tool's declared parameter schema is fully specified --
+            an open-ended dict doesn't declare cleanly in every function-
+            declaration format ADK can emit, and a model can end up
+            passing an incomplete record when it doesn't.
 
     Returns:
         dict with 'predicted_price', 'base_value', and 'contributions'
@@ -55,14 +60,18 @@ def run_valuation_model_fn(record: dict) -> dict:
         so all three implementations are directly comparable.
     """
     base_value = 265000
-    sqft_contribution = (record["sqft"] - 1800) * 42
+    sqft_contribution = (record.sqft - 1800) * 42
     predicted = base_value + sqft_contribution + 14100 + 9200 - 1500
 
     return {
         "predicted_price": predicted,
         "base_value": base_value,
         "contributions": [
-            {"feature": "living_area_sqft", "value": f"{record['sqft']:,} sqft", "contribution": sqft_contribution},
+            {
+                "feature": "living_area_sqft",
+                "value": f"{int(record.sqft):,} sqft",
+                "contribution": sqft_contribution,
+            },
             {"feature": "neighborhood", "value": "Maple/Oak corridor", "contribution": 14100},
             {"feature": "renovated_kitchen", "value": "yes", "contribution": 9200},
             {"feature": "lot_size", "value": "0.18 acres", "contribution": -1500},
