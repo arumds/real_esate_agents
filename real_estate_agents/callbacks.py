@@ -130,21 +130,28 @@ def after_model_log(callback_context, llm_response) -> None:
 
 def validate_valuation_input(tool, args: dict, tool_context) -> dict | None:
     """
-    Guardrail: before_tool_callback on run_valuation_model.
+    Guardrail: before_tool_callback on run_valuation_model_fn.
 
-    run_valuation_model_fn (real_estate_agents/tools.py) does `record["sqft"] - 1800`
-    with no validation of its own -- a missing/non-numeric sqft crashes the
-    tool outright. That shouldn't happen if the data quality agent did its
-    job, but the valuation explainer agent decides *what to pass* to this
-    tool call itself (it's instructed to call it on 'final_record', not
-    handed the dict directly) -- an LLM can still restate that dict wrong.
-    A callback catches that at the tool boundary, independent of whether
-    the calling agent's prompt was followed correctly.
+    run_valuation_model_fn (real_estate_agents/tools.py) does
+    `record.sqft - 1800` with no validation of its own -- a missing/
+    non-numeric sqft crashes the tool outright. That shouldn't happen if
+    the data quality agent did its job, but the valuation explainer agent
+    decides *what to pass* to this tool call itself (it's instructed to
+    call it on 'final_record', not handed the dict directly) -- an LLM can
+    still restate that dict wrong or drop a field. A callback catches that
+    at the tool boundary, independent of whether the calling agent's
+    prompt was followed correctly.
+
+    tool.name here is "run_valuation_model_fn" (FunctionTool derives it
+    from the wrapped function's own __name__, not the module-level alias
+    `run_valuation_model` it's assigned to in tools.py) -- this previously
+    checked for "run_valuation_model" and so never matched, silently
+    no-op'ing on every call regardless of input.
 
     Returning a dict here short-circuits the real tool call: ADK uses it as
     the tool's response instead of invoking run_valuation_model_fn.
     """
-    if tool.name != "run_valuation_model":
+    if tool.name != "run_valuation_model_fn":
         return None
 
     record = args.get("record")
