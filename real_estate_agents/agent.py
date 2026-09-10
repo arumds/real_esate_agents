@@ -64,6 +64,7 @@ from real_estate_agents.callbacks import (
     after_tool_log,
     before_model_log,
     before_tool_log,
+    validate_retrieve_market_context_input,
     validate_valuation_input,
 )
 from real_estate_agents.grounding_checker import MAX_GROUNDING_ATTEMPTS, GroundingCheckerAgent
@@ -151,6 +152,26 @@ def build_data_quality_agent() -> Agent:
     )
 
 
+def _derive_property_summary(context: ReadonlyContext) -> str:
+    """
+    Fallback for when 'property_summary' isn't pre-seeded in session state
+    (main.py seeds it; adk run/adk web/a deployed Agent Engine's playground
+    don't). Without this, property_summary defaults to "" and the
+    instruction below tells the model to call retrieve_market_context with
+    that empty string -- which OpenAI's embeddings API rejects outright
+    ("input cannot be an empty string"), crashing the whole tool call.
+
+    Builds the same kind of summary main.py constructs manually, from the
+    'final_record' already present in 'data_quality_decision_raw' by the
+    time this runs.
+    """
+    raw = context.state.get("data_quality_decision_raw")
+    decision = json.loads(raw) if isinstance(raw, str) else raw
+    record = (decision or {}).get("final_record") or {}
+    address = record.get("address") or "unknown address"
+    return f"{address}, {record.get('bedrooms', '?')}bd/{record.get('bathrooms', '?')}ba, {record.get('sqft', '?')} sqft"
+
+
 def _make_valuation_instruction(fixed_audience: str | None = None):
     """
     Returns an instruction callable for the valuation explainer agent.
@@ -169,7 +190,7 @@ def _make_valuation_instruction(fixed_audience: str | None = None):
 
     def _instruction(context: ReadonlyContext) -> str:
         audience = fixed_audience or context.state.get("audience", "homeowner")
-        property_summary = context.state.get("property_summary", "")
+        property_summary = context.state.get("property_summary") or _derive_property_summary(context)
         feedback_key = f"grounding_feedback__{fixed_audience}" if fixed_audience else "grounding_feedback"
 
         base = (
@@ -225,9 +246,10 @@ def build_valuation_explainer_agent(audience: str | None = None) -> Agent:
         output_schema=ValuationExplanation,
         output_key=f"valuation_explanation_raw{suffix}",
         # before_tool_log always runs first (always returns None, so it never
-        # short-circuits the chain) and stamps a start time; validate_valuation_input
-        # runs second and may short-circuit run_valuation_model if its input is bad.
-        before_tool_callback=[before_tool_log, validate_valuation_input],
+        # short-circuits the chain) and stamps a start time; the two guardrails
+        # after it each check tool.name themselves and only intervene on their
+        # own tool (run_valuation_model / retrieve_market_context respectively).
+        before_tool_callback=[before_tool_log, validate_valuation_input, validate_retrieve_market_context_input],
         after_tool_callback=after_tool_log,
         before_model_callback=before_model_log,
         after_model_callback=after_model_log,

@@ -162,3 +162,29 @@ def validate_valuation_input(tool, args: dict, tool_context) -> dict | None:
         }
 
     return None
+
+
+def validate_retrieve_market_context_input(tool, args: dict, tool_context) -> list | None:
+    """
+    Guardrail: before_tool_callback on retrieve_market_context.
+
+    OpenAI's embeddings API rejects an empty-string input outright ("input
+    cannot be an empty string"), which crashes this tool call if 'query'
+    ever comes through empty -- e.g. property_summary wasn't seeded and
+    agent.py::_derive_property_summary's own fallback still comes up empty
+    (a final_record with no address at all). Returning [] here
+    short-circuits the real call: the explainer's instruction already
+    treats retrieved context as optional ("you MAY reference retrieved
+    market context for color"), so an empty list is a valid, non-crashing
+    response, not an error.
+    """
+    if tool.name != "retrieve_market_context":
+        return None
+
+    query = args.get("query")
+    if not isinstance(query, str) or not query.strip():
+        print(f"[guardrail] blocked retrieve_market_context: empty/invalid query={query!r}")
+        CALL_LOG.append({"kind": "tool", "name": tool.name, "args": args, "latency_ms": 0.0, "blocked": True})
+        return []
+
+    return None
